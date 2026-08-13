@@ -13,7 +13,8 @@
     "test:lexicon": "tsx scripts/test-lexicon.ts",
     "test:llm": "tsx scripts/test-llm.ts",
     "test:e2e": "tsx scripts/test-e2e.ts",
-    "recompute": "tsx scripts/recompute-stats.ts"
+    "recompute": "tsx scripts/recompute-stats.ts",
+    "test:flow": "tsx scripts/test-flow.ts"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.70.0",
