@@ -59,14 +59,21 @@ export interface ProfileMeta {
   photo_count?: number;
   review_count?: number;
   tenure_months?: number;
-  shifts_per_week?: number;
-  price_yen?: number;
   diary_count_recent?: number;
   has_face_photo?: boolean;
   sizes_disclosed?: boolean;
-  age_disclosed?: boolean;
+  /** 総額（円） */
+  price_yen?: number;
+  /** コース時間（分）。price_yen と合わせて時間あたり単価を出す。 */
+  duration_min?: number;
   /** 本文の文字数。呼び出し側で自動計算して埋める。 */
   profile_length?: number;
+  /**
+   * 入力時に選んだバケットの表示ラベル（例: photo_count → "2〜4枚"）。
+   * 辞書は数値の代表値で判定するが、プロンプトにはこちらを見せる。
+   * 代表値をそのまま渡すと「ちょうど3枚」と誤解されるため。
+   */
+  labels?: Record<string, string>;
 }
 
 export interface LexiconHit {

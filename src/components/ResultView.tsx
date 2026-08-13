@@ -76,15 +76,24 @@ export function ReadingCard({
   stat?: EntryStat;
 }) {
   const pct = Math.round(reading.confidence * 100);
-  const tone = pct >= 65 ? "text-bad" : pct >= 40 ? "text-warn" : "text-muted";
+  const trust = reading.stance === "trust";
+
+  // 疑いは確度が高いほど危険、信頼は高いほど安心。同じ数字でも意味が逆なので色も分ける。
+  const tone = trust ? "text-good" : pct >= 65 ? "text-bad" : pct >= 40 ? "text-warn" : "text-muted";
 
   return (
-    <article className="card space-y-3">
+    <article className={`card space-y-3 ${trust ? "border-[#2c6a52]" : ""}`}>
       <div className="flex items-start justify-between gap-3">
-        <blockquote className="border-l-2 border-accent/60 pl-3 text-sm italic text-slate-300">
+        <blockquote
+          className={`border-l-2 pl-3 text-sm italic text-slate-300 ${
+            trust ? "border-good" : "border-accent/60"
+          }`}
+        >
           {reading.quote}
         </blockquote>
-        <span className={`shrink-0 text-xs font-bold tabular-nums ${tone}`}>確度 {pct}%</span>
+        <span className={`num shrink-0 text-xs font-bold ${tone}`}>
+          {trust ? "信頼度" : "確度"} {pct}%
+        </span>
       </div>
 
       <div>
@@ -93,7 +102,7 @@ export function ReadingCard({
       </div>
 
       <div>
-        <p className="label">穿った読み</p>
+        <p className="label">{trust ? "信頼できる材料" : "穿った読み"}</p>
         <p className="whitespace-pre-wrap text-[0.95rem] leading-relaxed text-slate-100">
           {reading.skeptical}
         </p>
@@ -101,16 +110,17 @@ export function ReadingCard({
 
       <details className="group">
         <summary className="cursor-pointer list-none text-xs text-accent hover:underline">
-          この読みが外れる条件を見る
+          {trust ? "この信頼を撤回すべき条件を見る" : "この読みが外れる条件を見る"}
         </summary>
         <p className="mt-2 whitespace-pre-wrap rounded-lg bg-ink/60 p-3 text-sm leading-relaxed text-slate-300">
           {reading.counter_evidence}
         </p>
       </details>
 
-      {reading.lexicon_id && (
+      {(reading.lexicon_id || trust) && (
         <div className="flex flex-wrap gap-2 pt-1">
-          <span className="chip">{reading.lexicon_id}</span>
+          {trust && <span className="chip-pos">信頼シグナル</span>}
+          {reading.lexicon_id && <span className="chip">{reading.lexicon_id}</span>}
           <StatChip stat={stat} />
         </div>
       )}

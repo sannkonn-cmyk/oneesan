@@ -1,5 +1,7 @@
 import { NextResponse } from "next/server";
+import type { ProfileMeta } from "./lexicon/types";
 import { LlmError } from "./llm/provider";
+import { expandMetaSelection } from "./meta";
 
 /**
  * API ルート共通のエラー処理。
@@ -26,38 +28,31 @@ export async function handle<T>(fn: () => Promise<T>): Promise<NextResponse> {
 const num = (v: unknown): number | undefined => {
   if (v === undefined || v === null || v === "") return undefined;
   const n = Number(v);
-  return Number.isFinite(n) ? n : undefined;
-};
-
-const bool = (v: unknown): boolean | undefined => {
-  if (v === true || v === "true" || v === "yes") return true;
-  if (v === false || v === "false" || v === "no") return false;
-  return undefined;
+  return Number.isFinite(n) && n > 0 ? n : undefined;
 };
 
 /**
  * フォームから来た構造情報を型に整える。
- * 空欄は undefined のままにする。0 や false に落とすと
- * 「未入力」が「該当しない」にすり替わってしまう。
+ *
+ * 受け取るのは「どのバケットを選んだか」の index であって生の数値ではない
+ * （src/lib/meta.ts 参照）。未選択のキーはそもそも入れない。
+ * 0 や false に落とすと「未入力」が「該当しない」にすり替わってしまう。
  */
-export function parseMeta(raw: Record<string, unknown>): Record<string, number | boolean> {
-  const out: Record<string, number | boolean> = {};
-  const numeric = [
-    "photo_count",
-    "review_count",
-    "tenure_months",
-    "shifts_per_week",
-    "price_yen",
-    "diary_count_recent",
-  ] as const;
-  for (const k of numeric) {
-    const v = num(raw[k]);
-    if (v !== undefined) out[k] = v;
+export function parseMeta(raw: Record<string, unknown>): ProfileMeta {
+  const selection: Record<string, number | undefined> = {};
+  const sel = (raw.meta_selection ?? {}) as Record<string, unknown>;
+  for (const [k, v] of Object.entries(sel)) {
+    const n = Number(v);
+    if (Number.isInteger(n) && n >= 0) selection[k] = n;
   }
-  const boolean = ["has_face_photo", "sizes_disclosed", "age_disclosed"] as const;
-  for (const k of boolean) {
-    const v = bool(raw[k]);
-    if (v !== undefined) out[k] = v;
-  }
-  return out;
+
+  const { values, labels } = expandMetaSelection(selection);
+  const meta: ProfileMeta = { ...values, labels };
+
+  const price = num(raw.price_yen);
+  const duration = num(raw.duration_min);
+  if (price) meta.price_yen = price;
+  if (duration) meta.duration_min = duration;
+
+  return meta;
 }

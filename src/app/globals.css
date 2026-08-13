@@ -2,7 +2,8 @@
 @tailwind components;
 @tailwind utilities;
 
-/* 使う場所（移動中・薄暗い場所）を想定して常時ダーク。 */
+/* 使う場所（夜・移動中・薄暗い場所）を想定して、意図的にダーク単一で固定する。
+   端末のライトモードに引きずられて見づらくならないよう、色は全て明示的に塗る。 */
 html {
   color-scheme: dark;
   -webkit-text-size-adjust: 100%;
@@ -10,7 +11,6 @@ html {
 
 body {
   @apply bg-ink text-slate-100 antialiased;
-  /* iOS Safari の下部バーに隠れないように */
   padding-bottom: env(safe-area-inset-bottom);
 }
 
@@ -18,25 +18,57 @@ body {
   .card {
     @apply rounded-xl border border-edge bg-panel p-4;
   }
-  .label {
-    @apply mb-1 block text-xs font-medium text-muted;
+  .card-flat {
+    @apply rounded-xl border border-edge bg-panel2 p-4;
   }
+
+  /* 見出しラベルは等幅＋字間で「調書」の質感を出す */
+  .label {
+    @apply mb-1.5 block font-mono text-[10.5px] uppercase tracking-[0.09em] text-dim;
+  }
+  .sect {
+    @apply mb-2 mt-5 text-[12.5px] font-bold tracking-wide text-muted;
+  }
+  .hint {
+    @apply text-[11.5px] leading-relaxed text-dim;
+  }
+
+  /* 数字が縦に揃うところは必ず等幅＋tabular-nums */
+  .num {
+    @apply font-mono tabular-nums;
+  }
+
   .input {
-    @apply w-full rounded-lg border border-edge bg-ink px-3 py-2 text-base
-           text-slate-100 placeholder:text-slate-600
+    @apply w-full rounded-lg border border-edge bg-[#090d11] px-3 py-2 text-[15px]
+           leading-relaxed text-slate-100 placeholder:text-[#3f4d5c]
            focus:border-accent focus:outline-none;
   }
+
   .btn {
-    @apply inline-flex items-center justify-center gap-2 rounded-lg px-4 py-3
-           text-sm font-semibold transition disabled:cursor-not-allowed disabled:opacity-40;
+    @apply inline-flex w-full items-center justify-center gap-2 rounded-lg px-4 py-3
+           text-sm font-bold transition disabled:cursor-not-allowed disabled:opacity-40;
   }
   .btn-primary {
-    @apply btn bg-accent text-ink hover:brightness-110;
+    @apply btn bg-accent text-[#07211f] hover:brightness-110;
   }
   .btn-ghost {
-    @apply btn border border-edge text-slate-200 hover:bg-edge/50;
+    @apply btn border border-edge text-slate-200 hover:bg-edgesoft;
   }
+
   .chip {
-    @apply inline-flex items-center rounded-full border border-edge px-2 py-0.5 text-xs text-muted;
+    @apply inline-flex items-center rounded-full border border-edge px-2 py-0.5
+           font-mono text-[10px] text-dim;
+  }
+  .chip-pos {
+    @apply chip border-[#2c6a52] text-good;
+  }
+
+  /* 1タップで選ぶバケット。数値キーボードを開かせないための主役 */
+  .bucket {
+    @apply cursor-pointer select-none rounded-lg border border-edge px-3 py-2
+           text-center text-[11.5px] text-dim transition;
+  }
+  .bucket-on {
+    @apply border-accent bg-[#101f1e] text-accent;
   }
 }

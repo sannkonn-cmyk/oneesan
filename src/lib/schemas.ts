@@ -35,8 +35,11 @@ const jsScores = {
   additionalProperties: false,
 } as const;
 
+export const STANCES = ["suspicion", "trust"] as const;
+
 const zReading = z.object({
   id: z.string(),
+  stance: z.enum(STANCES),
   quote: z.string(),
   surface: z.string(),
   skeptical: z.string(),
@@ -49,6 +52,12 @@ const jsReading = {
   type: "object",
   properties: {
     id: { type: "string", description: "この読みの識別子。r1, r2, r3 ... と順に振る" },
+    stance: {
+      type: "string",
+      enum: [...STANCES],
+      description:
+        "この読みの立場。suspicion=この記述を疑う、trust=この記述は信頼できる材料として扱う。正のシグナル（できないことの明記、具体的な固有名詞など）は trust にする",
+    },
     quote: {
       type: "string",
       description: "プロフィール本文から一字一句そのまま引用した文字列。要約や言い換えは禁止",
@@ -57,19 +66,33 @@ const jsReading = {
     skeptical: {
       type: "string",
       description:
-        "穿った読み。最低3文。(1)何を疑うのか (2)なぜそう読めるのか本文中の根拠 (3)今回の文脈でその解釈を採る/採らない理由、を必ず含める",
+        "読みの本文。最低3文。suspicion なら (1)何を疑うのか (2)なぜそう読めるのか本文中の根拠 (3)今回の文脈でその解釈を採る/採らない理由。trust なら (1)なぜ信頼できるのか (2)本文中の根拠 (3)それが他の記述の読み方にどう影響するか",
     },
-    confidence: { type: "number", description: "この読みが当たっている確度。0.0〜1.0" },
+    confidence: {
+      type: "number",
+      description:
+        "この読みが当たっている確度 0.0〜1.0。suspicion なら疑いが当たっている確度、trust なら信頼してよい確度。立場が違うだけで、どちらも『この読みがどれだけ確かか』を表す",
+    },
     lexicon_id: {
       type: "string",
       description: "対応する辞書項目の id。辞書に無い独自の読みなら空文字",
     },
     counter_evidence: {
       type: "string",
-      description: "この読みが外れる条件。どんな事実が確認できればこの疑いを取り下げるか",
+      description:
+        "この読みが外れる条件。suspicion なら疑いを取り下げる条件、trust なら信頼を撤回する条件",
     },
   },
-  required: ["id", "quote", "surface", "skeptical", "confidence", "lexicon_id", "counter_evidence"],
+  required: [
+    "id",
+    "stance",
+    "quote",
+    "surface",
+    "skeptical",
+    "confidence",
+    "lexicon_id",
+    "counter_evidence",
+  ],
   additionalProperties: false,
 } as const;
 

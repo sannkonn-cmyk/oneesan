@@ -1,6 +1,6 @@
 import { CATEGORY_LABEL } from "./lexicon/types";
-import type { LexiconHit, ProfileMeta } from "./lexicon/types";
-import type { EntryStat } from "./lexicon/types";
+import type { EntryStat, LexiconHit, ProfileMeta } from "./lexicon/types";
+import { pricePerHour } from "./meta";
 import type { AnalyzeResult } from "./schemas";
 
 // ---------------------------------------------------------------- 共通の役割定義
@@ -30,12 +30,21 @@ quote には本文に実在する文字列を一字一句そのまま入れて�
 存在しない文言の創作は禁止です。引用できる該当箇所が無い読み（構造情報だけを
 根拠とする読みなど）は、quote に該当する事実を短く書いてください（例:「写真1枚」）。
 
-## 穿った読みは3文以上、根拠と文脈判断まで書く
+## 読みは3文以上、根拠と文脈判断まで書く
 skeptical には最低3文を書いてください。点数よりもこの本文が読者にとっての価値です。
-  (1) 何を疑うのか
+  (1) 何を疑うのか（trust の場合はなぜ信頼できるのか）
   (2) なぜそう読めるのか（本文中のどこを根拠にしているか）
   (3) 今回の文脈でその解釈を採る／採らない理由
 同じ表現でもプロフィール全体の構成次第で読みは変わります。その判断過程を書いてください。
+
+## 立場（stance）を正しく使い分ける
+各 reading には stance を付けます。
+  suspicion : この記述を疑う。confidence は「疑いが当たっている確度」
+  trust     : この記述は信頼できる材料として扱う。confidence は「信頼してよい確度」
+正のシグナル（できないことの明記、具体的な固有名詞、サービス内容の具体記述など）は
+trust にしてください。信頼できる材料に無理やり疑いの体裁を与えて確度を下げると、
+読み手には「褒めているのに確度が低い」という意味不明な表示になります。
+強く信頼できるものは trust で高い confidence を付けてください。
 
 ## 悲観に倒れない — これは同じくらい重要です
 穿つことが目的化すると全員が「見送り」になり、道具として使い物になりません。
@@ -67,15 +76,12 @@ verification_questions は、利用者が登楼前に実行できる具体的な
 // ---------------------------------------------------------------- 入力の組み立て
 
 const META_LABEL: Record<string, string> = {
-  photo_count: "写真枚数",
-  review_count: "口コミ件数",
-  tenure_months: "在籍月数",
-  shifts_per_week: "週の出勤日数",
-  price_yen: "料金(円)",
-  diary_count_recent: "直近2週の写メ日記数",
+  photo_count: "写真",
+  tenure_months: "在籍期間",
+  review_count: "口コミ",
+  diary_count_recent: "写メ日記（直近2週）",
   has_face_photo: "顔出し",
-  sizes_disclosed: "3サイズ公開",
-  age_disclosed: "年齢公開",
+  sizes_disclosed: "3サイズ",
 };
 
 function renderMeta(meta: ProfileMeta): string {
@@ -83,8 +89,21 @@ function renderMeta(meta: ProfileMeta): string {
   for (const [key, label] of Object.entries(META_LABEL)) {
     const v = (meta as Record<string, unknown>)[key];
     if (v === undefined || v === null || v === "") continue;
-    lines.push(`- ${label}: ${typeof v === "boolean" ? (v ? "あり" : "なし") : v}`);
+    // 入力時のバケット名をそのまま見せる。代表値（例: 3）を渡すと
+    // 「ちょうど3枚」と誤解されるため。
+    const shown = meta.labels?.[key] ?? (typeof v === "boolean" ? (v ? "あり" : "なし") : String(v));
+    lines.push(`- ${label}: ${shown}`);
   }
+
+  if (meta.price_yen) {
+    const perHour = pricePerHour(meta.price_yen, meta.duration_min);
+    lines.push(
+      meta.duration_min
+        ? `- 料金: ${meta.price_yen.toLocaleString()}円 / ${meta.duration_min}分（時間あたり約 ${perHour?.toLocaleString()}円）`
+        : `- 料金: ${meta.price_yen.toLocaleString()}円`,
+    );
+  }
+
   const unknown = Object.entries(META_LABEL)
     .filter(([k]) => {
       const v = (meta as Record<string, unknown>)[k];
