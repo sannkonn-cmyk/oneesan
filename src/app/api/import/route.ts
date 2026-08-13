@@ -2,7 +2,7 @@ import type { NextRequest } from "next/server";
 import { handle } from "@/lib/api-util";
 import { runImport } from "@/lib/service";
 
-export const maxDuration = 300;
+export const maxDuration = 600;
 
 /**
  * 過去実績を1件だけ処理する。

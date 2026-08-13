@@ -148,6 +148,27 @@ function renderHits(hits: LexiconHit[], stats: Map<string, EntryStat>): string {
     .join("\n\n");
 }
 
+/**
+ * 再レビュー用の圧縮版。
+ * 辞書の疑いの内容や着眼点は前回の判定にすでに織り込まれているので、
+ * 同じ解説を再送すると入力が膨らみ、思考時間だけが伸びる。
+ * ここでは的中率の参照に必要な最小限だけ渡す。
+ */
+function renderHitsCompact(hits: LexiconHit[], stats: Map<string, EntryStat>): string {
+  if (!hits.length) return "（辞書のヒットはありません）";
+  return hits
+    .map((h) => {
+      const s = stats.get(h.entry.id);
+      const rate = !s
+        ? "未検証"
+        : s.unverified
+          ? `未検証（初期値 ${(s.rate * 100).toFixed(0)}%）`
+          : `的中率 ${(s.rate * 100).toFixed(0)}%（実績${s.observations}件）`;
+      return `- ${h.entry.id}（${h.entry.label}）${rate}`;
+    })
+    .join("\n");
+}
+
 export interface SimilarCase {
   girlName: string;
   shopName: string;
@@ -301,9 +322,9 @@ ${answered || "（個別項目の回答なし）"}
 
 ${input.freeNote ? `# 利用者の追記メモ\n\n${input.freeNote}` : ""}
 
-# 辞書が反応した項目（参考・前回と同じ）
+# 辞書項目の現在の的中率（参考）
 
-${renderHits(input.hits, input.stats)}${renderSimilar(input.similar)}`;
+${renderHitsCompact(input.hits, input.stats)}${renderSimilar(input.similar)}`;
 
   return { system, user };
 }

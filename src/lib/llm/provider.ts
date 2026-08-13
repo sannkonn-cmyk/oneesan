@@ -73,7 +73,9 @@ export const llmConfig = () => ({
   provider: (process.env.LLM_PROVIDER ?? "claude-code").trim(),
   model: (process.env.LLM_MODEL ?? "claude-opus-5").trim(),
   effort: (process.env.LLM_EFFORT ?? "high").trim(),
-  timeoutMs: Number(process.env.LLM_TIMEOUT_MS ?? 240_000),
+  // 再レビューは初回判定より出力量が多く、4分では足りずに落ちることがある。
+  // 待たされるより失敗するほうが困るので、余裕を持たせる。
+  timeoutMs: Number(process.env.LLM_TIMEOUT_MS ?? 600_000),
   claudeBin: (process.env.CLAUDE_BIN ?? "claude").trim(),
 });
 

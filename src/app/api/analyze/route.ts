@@ -2,7 +2,7 @@ import type { NextRequest } from "next/server";
 import { handle, parseMeta } from "@/lib/api-util";
 import { runAnalyze } from "@/lib/service";
 
-export const maxDuration = 300;
+export const maxDuration = 600;
 
 export async function POST(req: NextRequest) {
   return handle(async () => {

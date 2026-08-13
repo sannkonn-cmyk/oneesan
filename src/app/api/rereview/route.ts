@@ -3,7 +3,7 @@ import { handle } from "@/lib/api-util";
 import type { VerificationAnswer } from "@/lib/prompts";
 import { runRereview } from "@/lib/service";
 
-export const maxDuration = 300;
+export const maxDuration = 600;
 
 const STATUSES = new Set(["confirmed", "denied", "unknown", "unchecked"]);
 

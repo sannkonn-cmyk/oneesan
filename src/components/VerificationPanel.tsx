@@ -163,6 +163,11 @@ export function VerificationPanel({
           <button className="btn-primary" onClick={rereview} disabled={busy || !answeredCount}>
             {busy ? "読み直しています…" : "もう一度読み直す"}
           </button>
+          {busy && (
+            <p className="hint text-center">
+              初回の判定より時間がかかります（2〜5分）。この画面を閉じないでください。
+            </p>
+          )}
           {!answeredCount && (
             <p className="hint text-center">
               確認結果を1つ以上入力すると押せるようになります

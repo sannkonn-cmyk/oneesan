@@ -1,7 +1,12 @@
 import { getDb, nowIso } from "./db";
 import { getLlm } from "./llm";
 import { loadLexicon, matchLexicon } from "./lexicon/index";
-import { getAllStats, recordEvidenceBatch, type EvidenceInput } from "./lexicon/stats";
+import {
+  getAllStats,
+  recomputeAllStats,
+  recordEvidenceBatch,
+  type EvidenceInput,
+} from "./lexicon/stats";
 import type { Axis, ProfileMeta } from "./lexicon/types";
 import {
   buildAnalyzePrompt,
@@ -313,6 +318,34 @@ export async function runImport(
   if (evidence.length) recordEvidenceBatch(evidence);
 
   return { id: pastCaseId, result, evidenceCount: evidence.length };
+}
+
+/**
+ * 過去登録を1件消す。
+ *
+ * 元の記録を消すだけでは的中率に反映済みの分が残ってしまうので、
+ * そこから生まれた学習データも取り消して集計を作り直す。
+ * lexicon_stat は lexicon_evidence から毎回導出しているので、
+ * 根拠を消して再計算すれば正しい値に戻る。
+ */
+export function deletePastCase(id: number): { removedEvidence: number } {
+  const db = getDb();
+
+  const removed = db.transaction(() => {
+    const n = db
+      .prepare<[number], { n: number }>(
+        "SELECT COUNT(*) AS n FROM lexicon_evidence WHERE ref_table = 'past_case' AND ref_id = ?",
+      )
+      .get(id)?.n ?? 0;
+
+    db.prepare("DELETE FROM lexicon_evidence WHERE ref_table = 'past_case' AND ref_id = ?").run(id);
+    // outcome は past_case への外部キーで連鎖削除される
+    db.prepare("DELETE FROM past_case WHERE id = ?").run(id);
+    return n;
+  })();
+
+  recomputeAllStats();
+  return { removedEvidence: removed };
 }
 
 // ---------------------------------------------------------------- 4. 登楼実績の記録

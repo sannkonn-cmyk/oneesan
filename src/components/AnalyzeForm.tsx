@@ -2,7 +2,7 @@
 
 import { useRouter } from "next/navigation";
 import { useState } from "react";
-import { DURATION_OPTIONS, META_FIELDS, pricePerHour } from "@/lib/meta";
+import { DURATION_OPTIONS, META_FIELDS, PRICE_STEP, pricePerHour } from "@/lib/meta";
 
 export function AnalyzeForm() {
   const router = useRouter();
@@ -48,9 +48,17 @@ export function AnalyzeForm() {
       });
       const json = await res.json();
       if (!json.ok) {
+        // 失敗時は入力を残す。貼り直しをやり直させないため。
         setError(json.error ?? "判定に失敗しました。");
         return;
       }
+      // 成功したら次の1人をすぐ貼れるように空にする
+      setProfile("");
+      setShopName("");
+      setGirlName("");
+      setSelection({});
+      setPrice("");
+      setDuration("");
       router.push(`/analysis/${json.data.id}`);
     } catch (e) {
       setError(e instanceof Error ? e.message : "通信に失敗しました。");
@@ -109,6 +117,7 @@ export function AnalyzeForm() {
               className="input flex-1"
               type="number"
               inputMode="numeric"
+              step={PRICE_STEP}
               value={price}
               onChange={(e) => setPrice(e.target.value)}
               placeholder="総額"
