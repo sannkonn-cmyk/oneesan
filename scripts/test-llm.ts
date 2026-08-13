@@ -153,8 +153,46 @@ console.log(${JSON.stringify(envelope({ wrong: true }))});`,
     check("kind が notfound", (err as LlmError)?.kind === "notfound", (err as LlmError)?.kind);
   }
 
+  console.log("\n[6] プロンプトは標準入力から渡す（コマンドラインに載せない）");
+  {
+    // 貼り付けたプロフィール本文がコマンドとして解釈される事故を防ぐため、
+    // 本文は必ず標準入力側に置く。ここが崩れると、シェル経由で起動する
+    // 環境（Windows の .cmd 中継など）で任意コマンド実行の恐れが出る。
+    const dump = path.join(TMP, "argv.json");
+    const stub = makeStub(
+      "capture.js",
+      `const fs=require("fs");
+let stdin="";
+process.stdin.on("data",d=>stdin+=d).on("end",()=>{
+  fs.writeFileSync(${JSON.stringify(dump)}, JSON.stringify({argv:process.argv.slice(2),stdin}));
+  console.log(${JSON.stringify(envelope({ greeting: "ok", lang: "ja" }))});
+});`,
+    );
+    process.env.CLAUDE_BIN = stub;
+    const p = new ClaudeCodeProvider();
+
+    const marker = 'プロフィール本文 & echo pwned | rm -rf "危険" `whoami`';
+    await p.complete({ ...req, user: marker });
+
+    const captured = JSON.parse(fs.readFileSync(dump, "utf8")) as {
+      argv: string[];
+      stdin: string;
+    };
+    check(
+      "本文がコマンドライン引数に含まれていない",
+      !captured.argv.some((a) => a.includes("プロフィール本文")),
+      captured.argv.join(" ").slice(0, 120),
+    );
+    check("本文が標準入力に渡っている", captured.stdin.includes(marker));
+    check(
+      "引数は固定の内容だけ（-p の直後に本文が無い）",
+      captured.argv[0] === "-p" && captured.argv[1] === "--output-format",
+      captured.argv.slice(0, 3).join(" "),
+    );
+  }
+
   if (process.argv.includes("--live")) {
-    console.log("\n[6] 実機（Claude Code を実際に呼び出します）");
+    console.log("\n[7] 実機（Claude Code を実際に呼び出します）");
     delete process.env.CLAUDE_BIN;
     const p = new ClaudeCodeProvider();
     const r = await p.complete({
@@ -167,7 +205,7 @@ console.log(${JSON.stringify(envelope({ wrong: true }))});`,
       `       → ${JSON.stringify(r.data)} (${r.durationMs}ms, 相当額 $${r.costUsd?.toFixed(4)})`,
     );
   } else {
-    console.log("\n[6] 実機テストはスキップしました（実行するには --live を付けてください）");
+    console.log("\n[7] 実機テストはスキップしました（実行するには --live を付けてください）");
   }
 
   fs.rmSync(TMP, { recursive: true, force: true });

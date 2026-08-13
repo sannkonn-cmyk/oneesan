@@ -1,8 +1,7 @@
-import { execFile } from "node:child_process";
+import { spawn, spawnSync } from "node:child_process";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { promisify } from "node:util";
 import {
   LlmError,
   llmConfig,
@@ -11,8 +10,6 @@ import {
   type LlmRequest,
   type LlmResult,
 } from "./provider";
-
-const execFileAsync = promisify(execFile);
 
 /** claude -p --output-format json が返す封筒。必要なフィールドだけ拾う。 */
 interface Envelope {
@@ -71,14 +68,51 @@ function extractJson(text: string): unknown {
  * Claude Code CLI をヘッドレス実行するプロバイダ。
  * Pro / Max のサブスク枠を使うため、API の従量課金は発生しない。
  */
+/**
+ * 直接起動できる実行ファイルを決める。
+ *
+ * 通常は起動スクリプト（scripts/ensure-claude.mjs）が絶対パスを
+ * CLAUDE_BIN に書き込むので、ここはそれを使うだけ。
+ * npm start などで直接起動された場合の保険として、Windows では
+ * .cmd 中継ファイルしか無いケースを自力で解決しておく。
+ */
+function resolveBin(configured: string): string {
+  if (configured !== "claude") return configured; // 明示指定は尊重する
+  if (process.platform !== "win32") return configured;
+
+  const where = spawnSync("where", [configured], { encoding: "utf8", shell: true });
+  const found = (where.stdout ?? "")
+    .split(/\r?\n/)
+    .map((s) => s.trim())
+    .filter(Boolean);
+  const exe = found.find((p) => p.toLowerCase().endsWith(".exe"));
+  if (exe) return exe;
+
+  const root = (spawnSync("npm", ["root", "-g"], { encoding: "utf8", shell: true }).stdout ?? "").trim();
+  if (root) {
+    const scope = path.join(root, "@anthropic-ai");
+    const candidates = [path.join(scope, "claude-code", "bin", "claude.exe")];
+    if (fs.existsSync(scope)) {
+      for (const dir of fs.readdirSync(scope)) {
+        candidates.push(path.join(scope, dir, "bin", "claude.exe"));
+        candidates.push(path.join(scope, dir, "claude.exe"));
+      }
+    }
+    for (const c of candidates) if (fs.existsSync(c)) return c;
+  }
+  return configured;
+}
+
 export class ClaudeCodeProvider implements LlmProvider {
   readonly name = "claude-code";
   readonly model: string;
   private readonly cfg = llmConfig();
   private readonly cwd: string;
+  private readonly bin: string;
 
   constructor() {
     this.model = this.cfg.model;
+    this.bin = resolveBin(this.cfg.claudeBin);
     // リポジトリ内で実行すると CLAUDE.md や周辺ファイルを拾いうるので、
     // 空の作業ディレクトリを専用に用意してそこで走らせる。
     this.cwd = path.join(os.tmpdir(), "oneesan-llm");
@@ -97,14 +131,91 @@ export class ClaudeCodeProvider implements LlmProvider {
     return env;
   }
 
+  /**
+   * シェルを介さずに claude を起動し、プロンプトは標準入力から渡す。
+   *
+   * プロンプトをコマンドライン引数に載せない理由:
+   *   - 貼り付けられたプロフィール本文がコマンドとして解釈される事故を防ぐ
+   *   - 長文でコマンドライン長の上限に当たるのを避ける
+   * 結果としてコマンドラインは固定文字列だけになる。
+   */
+  private exec(args: string[], stdinText: string): Promise<{ stdout: string; stderr: string }> {
+    return new Promise((resolve, reject) => {
+      const child = spawn(this.bin, args, {
+        cwd: this.cwd,
+        env: this.childEnv(),
+        windowsHide: true,
+        shell: false,
+      });
+
+      let stdout = "";
+      let stderr = "";
+      let done = false;
+
+      const finish = (fn: () => void) => {
+        if (done) return;
+        done = true;
+        clearTimeout(timer);
+        fn();
+      };
+
+      const timer = setTimeout(() => {
+        finish(() => {
+          child.kill();
+          reject(
+            new LlmError("timeout", `${this.cfg.timeoutMs}ms 以内に応答がありませんでした`),
+          );
+        });
+      }, this.cfg.timeoutMs);
+
+      child.stdout.setEncoding("utf8");
+      child.stderr.setEncoding("utf8");
+      child.stdout.on("data", (d: string) => (stdout += d));
+      child.stderr.on("data", (d: string) => (stderr += d));
+
+      child.on("error", (e: NodeJS.ErrnoException) => {
+        finish(() => {
+          if (e.code === "ENOENT") {
+            reject(
+              new LlmError(
+                "notfound",
+                `Claude Code を起動できません: ${this.bin}`,
+                "起動スクリプト（start.bat / start.command）から立ち上げ直すと、実行ファイルの場所を自動で設定し直します。",
+              ),
+            );
+            return;
+          }
+          reject(new LlmError(classify(e.message), "Claude Code の起動に失敗しました", e.message));
+        });
+      });
+
+      child.on("close", (code) => {
+        finish(() => {
+          if (code !== 0 && !stdout) {
+            const detail = stderr || `終了コード ${code}`;
+            reject(
+              new LlmError(classify(detail), "Claude Code がエラーを返しました", detail.slice(0, 2000)),
+            );
+            return;
+          }
+          resolve({ stdout, stderr });
+        });
+      });
+
+      // 相手が先に終了した場合の EPIPE で落とさない
+      child.stdin.on("error", () => {});
+      child.stdin.end(stdinText);
+    });
+  }
+
   private async invoke(
     system: string,
     user: string,
     jsonSchema: object,
   ): Promise<{ envelope: Envelope; stdout: string }> {
+    // user はここに入れない（標準入力から渡す）。この配列は全て固定の内容。
     const args = [
       "-p",
-      user,
       "--output-format", "json",
       "--json-schema", JSON.stringify(jsonSchema),
       "--system-prompt", system,
@@ -117,27 +228,7 @@ export class ClaudeCodeProvider implements LlmProvider {
       "--no-session-persistence",
     ];
 
-    let stdout: string;
-    try {
-      const res = await execFileAsync(this.cfg.claudeBin, args, {
-        cwd: this.cwd,
-        env: this.childEnv(),
-        timeout: this.cfg.timeoutMs,
-        maxBuffer: 32 * 1024 * 1024,
-        encoding: "utf8",
-      });
-      stdout = res.stdout;
-    } catch (e) {
-      const err = e as NodeJS.ErrnoException & { stdout?: string; stderr?: string; killed?: boolean };
-      if (err.code === "ENOENT") {
-        throw new LlmError("notfound", `${this.cfg.claudeBin} を実行できません`);
-      }
-      if (err.killed) {
-        throw new LlmError("timeout", `${this.cfg.timeoutMs}ms 以内に応答がありませんでした`);
-      }
-      const detail = [err.stdout, err.stderr, err.message].filter(Boolean).join("\n");
-      throw new LlmError(classify(detail), "Claude Code の実行に失敗しました", detail.slice(0, 2000));
-    }
+    const { stdout } = await this.exec(args, user);
 
     let envelope: Envelope;
     try {
