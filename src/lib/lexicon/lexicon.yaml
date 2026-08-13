@@ -1,0 +1,562 @@
+version: "1.0.0"
+
+# ============================================================================
+# 裏読み辞書
+#
+# このファイルは「この表現が出たら、この疑いを持て」の対応表です。
+# プログラムの知識がなくても編集できます。メモ帳で開いて書き足してください。
+#
+# 各項目の意味:
+#   id              : 内部の名札。半角英数字とアンダースコアで、重複しないように
+#   category        : 分類（下記6種のどれか）
+#   label           : 画面に出る短い名前
+#   patterns        : この文字列が本文にあったら反応する（正規表現が使えます）
+#   absent_patterns : 「これが1つも無かったら」反応する。欠落の検出用
+#   min_count       : patterns の合計ヒット数がこの数以上のときだけ反応（既定 1）
+#   meta            : 写真枚数など、本文以外の条件
+#   require         : patterns と meta の両方がある場合の結合。all（両方）/ any（どちらか）
+#   hypothesis      : 何を疑うのか。これが AI に渡されます
+#   context_check   : AI に「ここを見て採否を判断しろ」と指示する観点
+#   affects         : 4つの点数への影響（-3〜+3）
+#   prior           : 実績が0件のときの初期的中率。alpha=当たり、beta=外れの仮想件数
+#                     例 alpha:2, beta:2 → 初期50%。alpha:3, beta:1 → 初期75%
+#
+# category の種類:
+#   over_claim : 過剰主張（強く書いてある＝他が弱い）
+#   euphemism  : 婉曲・言い換え
+#   omission   : 欠落（書かれていないこと）← 最重要
+#   economic   : 需給シグナル（売れ行き）
+#   authorship : 文体（誰が書いたか）
+#   positive   : 信頼シグナル（これは良い兆候）
+#
+# meta で使える項目:
+#   photo_count（写真枚数） review_count（口コミ件数） tenure_months（在籍月数）
+#   shifts_per_week（週の出勤日数） price_yen（料金） diary_count_recent（直近2週の写メ日記数）
+#   has_face_photo（顔出しの有無） sizes_disclosed（3サイズ公開） age_disclosed（年齢公開）
+#   profile_length（本文の文字数・自動計算）
+#   op は lte(以下) lt(未満) gte(以上) gt(超) eq(等しい) neq(等しくない)
+#        is_true(真である) is_false(偽である)
+# ============================================================================
+
+entries:
+  # ------------------------------------------------------------------
+  # A. 過剰主張 — 強く書いてある＝他に書くことが無い可能性
+  # ------------------------------------------------------------------
+  - id: meiki_claim
+    category: over_claim
+    label: 名器・締まりアピール
+    patterns:
+      - "名器"
+      - "締ま?りが(良|よ|い|抜群)"
+      - "キツキツ"
+      - "極上の(具|マンコ)"
+    hypothesis: >-
+      身体スペックの訴求に偏っている。売り手は最も自信のある部分を前面に出すため、
+      裏返せば接客・サービス面に訴求材料が乏しい可能性がある。
+    context_check: >-
+      同一プロフィール内にサービス内容・接客姿勢の具体的な記述があるか。
+      身体的特徴の記述が本文の大半を占めているなら疑いを強める。逆にサービスの
+      具体記述が充実しているなら、単なるセールスポイントの一つとして扱い疑いを弱める。
+    affects: { service_expectation: -2, landmine_risk: 2 }
+    prior: { alpha: 2, beta: 2 }
+
+  - id: superlative_hype
+    category: over_claim
+    label: 最上級の煽り文句
+    patterns:
+      - "業界(最高峰|屈指|No\\.?1|ナンバー(1|ワン))"
+      - "奇跡の"
+      - "伝説の"
+      - "[0-9０-９]+年に(一|１)人"
+      - "殿堂入り"
+      - "驚愕の"
+      - "衝撃の"
+    min_count: 1
+    hypothesis: >-
+      店側が書いた定型の煽り文であり、嬢個人の情報量はゼロに近い。
+      この種の語が多いほど、本人固有の情報が薄いプロフィールである。
+    context_check: >-
+      煽り文句を除いたあとに、本人固有の情報（具体的な趣味・サービス方針・
+      人柄が分かる記述）がどれだけ残るか。ほとんど残らないなら疑いを強める。
+    affects: { authenticity: -2, service_expectation: -1 }
+    prior: { alpha: 3, beta: 1 }
+
+  - id: guarantee_language
+    category: over_claim
+    label: 保証・断定の表現
+    patterns:
+      - "絶対に?(後悔|満足)"
+      - "満足度\\s*(100|１００)"
+      - "必ず(満足|ご満足)"
+      - "間違いなし"
+      - "保証します"
+    hypothesis: >-
+      サービス業で結果を断定するのは店側の販促文の特徴。実体のある約束ではなく、
+      予約を取るための言葉である可能性が高い。
+    context_check: >-
+      断定表現の直後に、その根拠となる具体的な内容（何をどうするから満足なのか）が
+      書かれているか。書かれていなければ空手形と判断する。
+    affects: { authenticity: -2, landmine_risk: 1 }
+    prior: { alpha: 3, beta: 1 }
+
+  - id: ranking_boast
+    category: over_claim
+    label: 人気・予約困難アピール
+    patterns:
+      - "ランキング\\s*(1|１)位"
+      - "予約(困難|殺到|争奪)"
+      - "指名(殺到|数No)"
+      - "争奪戦"
+      - "取れない"
+    hypothesis: >-
+      希少性を演出して即決を促す常套手段。実際の需給と一致しているとは限らない。
+    context_check: >-
+      在籍期間と出勤頻度に照らして自然か。在籍が短いのに「予約困難」なら
+      店の推し操作の疑い。逆に長期在籍で出勤も多く枠が埋まっているなら妥当。
+    affects: { landmine_risk: 1 }
+    prior: { alpha: 2, beta: 2 }
+
+  # ------------------------------------------------------------------
+  # B. 婉曲・言い換え — 直接褒められない事情の反映
+  # ------------------------------------------------------------------
+  - id: aikyou_substitute
+    category: euphemism
+    label: 愛嬌・癒し系（ルックス代替語）
+    patterns:
+      - "愛嬌(抜群|たっぷり|がある)"
+      - "癒し系"
+      - "笑顔が(素敵|可愛|charm|チャーミング)"
+      - "一緒にいて楽"
+      - "話しやすい"
+    hypothesis: >-
+      容姿を直接訴求できない場合に選ばれやすい代替語。人柄で売る方針の
+      表明でもあるため、必ずしも悪い兆候ではない。
+    context_check: >-
+      容姿に関する直接的な記述が併存しているか。人柄語だけで容姿語が皆無なら
+      写真とのギャップに備える。ただし本人が書いた具体的な人柄描写が
+      あるなら、正直な自己申告として好意的に読む。
+    affects: { landmine_risk: 1 }
+    prior: { alpha: 2, beta: 3 }
+
+  - id: body_hedge
+    category: euphemism
+    label: 体型の婉曲表現
+    patterns:
+      - "ぽっちゃり"
+      - "むっちり"
+      - "グラマー"
+      - "肉感的"
+      - "健康的な体型"
+      - "抱き心地"
+    hypothesis: >-
+      体型に関する申告。婉曲であるほど写真や想像との乖離が大きくなりやすい。
+    context_check: >-
+      3サイズや身長体重の数値が公開されているか。数値が併記されているなら
+      申告は誠実と判断し疑いを大きく下げる。数値非公開で婉曲語のみなら疑いを強める。
+    affects: { photo_reliability: -1 }
+    prior: { alpha: 2, beta: 2 }
+
+  - id: amateur_claim
+    category: euphemism
+    label: 素人感・未経験アピール
+    patterns:
+      - "素人"
+      - "初々し"
+      - "未経験"
+      - "業界(初|デビュー)"
+      - "右も左も"
+      - "たどたどし"
+    hypothesis: >-
+      二通りの読みがある。(1) 集客用の演出で実際は業界歴が長い、
+      (2) 文字通り不慣れでサービス技術が未熟。どちらでも期待値は下がりうる。
+    context_check: >-
+      在籍期間と照らす。在籍が長いのに「未経験」表記が残っているなら演出。
+      在籍が本当に短いなら技術面の期待値を下げる。ただし本人の言葉で
+      「まだ不慣れですが」と限界を認めているなら誠実さの側に寄せて読む。
+    affects: { service_expectation: -1 }
+    prior: { alpha: 2, beta: 2 }
+
+  - id: negation_tell
+    category: euphemism
+    label: 否定形の自己弁護
+    patterns:
+      - "マグロ(では|じゃ)(ありません|ない)"
+      - "事務的(では|じゃ)(ありません|ない)"
+      - "塩対応(は)?(しません|しない)"
+      - "放置(は)?(しません|しない)"
+      - "がっかりさせ(ません|ない)"
+      - "時間を気にし(ません|ない)"
+    hypothesis: >-
+      わざわざ否定するということは、過去にそう言われた経験があるか、
+      その懸念を持たれやすい自覚があることの示唆。否定は言及の証拠である。
+    context_check: >-
+      否定している内容そのものが、この嬢に対して実際に持たれている懸念だと仮定して
+      他の記述と突き合わせる。口コミでその点が指摘されていないかも確認対象になる。
+    affects: { service_expectation: -1, landmine_risk: 2 }
+    prior: { alpha: 3, beta: 2 }
+
+  - id: mature_hedge
+    category: euphemism
+    label: 大人の魅力・熟練
+    patterns:
+      - "大人の(魅力|色気|女性)"
+      - "熟(練|女)"
+      - "包容力"
+      - "お姉さん系"
+      - "年齢を感じさせない"
+    hypothesis: >-
+      年齢に関する婉曲。とくに「年齢を感じさせない」は年齢が高いことの示唆。
+    context_check: >-
+      申告年齢が公開されているか、公開年齢と表現が整合しているか。
+      年齢非公開でこの語が使われている場合は乖離を疑う。
+    affects: { photo_reliability: -1 }
+    prior: { alpha: 2, beta: 2 }
+
+  - id: gap_claim
+    category: euphemism
+    label: ギャップ推し
+    patterns:
+      - "ギャップ"
+      - "実は.{0,10}(激しい|大胆|エッチ)"
+      - "見た目と(は)?違"
+      - "意外と"
+    hypothesis: >-
+      第一印象で訴求しきれないため「開けてみれば違う」という物語で補っている
+      可能性。写真から受ける印象と実物の差を予告しているとも読める。
+    context_check: >-
+      ギャップの中身が具体的に書かれているか。「実は◯◯が好き」など固有性が
+      あるなら本人発信で好意的。抽象的な「ギャップがあります」だけなら定型文。
+    affects: { photo_reliability: -1 }
+    prior: { alpha: 2, beta: 2 }
+
+  # ------------------------------------------------------------------
+  # C. 欠落 — 書かれていないことが最も情報量が多い
+  # ------------------------------------------------------------------
+  - id: no_service_detail
+    category: omission
+    label: サービス内容の具体記述が無い
+    absent_patterns:
+      - "オプション"
+      - "対応(可|できます|してます)"
+      - "マット"
+      - "密着"
+      - "スキン"
+      - "アロマ"
+      - "洗体"
+      - "サービス(内容|に関して)"
+      - "得意"
+    hypothesis: >-
+      何を提供するのかが一切書かれていない。書けるだけの中身が無いか、
+      店側が定型紹介文だけで済ませているかのどちらか。
+    context_check: >-
+      写メ日記や口コミに具体的な言及があれば補える。プロフィール単体では
+      サービス面の判断材料がゼロであることを明示する。
+    affects: { service_expectation: -2, landmine_risk: 2 }
+    prior: { alpha: 3, beta: 2 }
+
+  - id: photo_single
+    category: omission
+    label: 写真が1枚以下
+    meta:
+      - { field: photo_count, op: lte, value: 1 }
+    hypothesis: >-
+      掲載できる写真が乏しい。撮影に応じない、加工前提の1枚しか出せない、
+      または在籍が浅く素材が無い。
+    context_check: >-
+      在籍期間と併せて読む。在籍が長いのに写真が増えないのは能動的に
+      避けている可能性が高く、疑いを強める。
+    affects: { photo_reliability: -2 }
+    prior: { alpha: 3, beta: 1 }
+
+  - id: no_face_photo
+    category: omission
+    label: 顔出しなし
+    meta:
+      - { field: has_face_photo, op: is_false }
+    hypothesis: >-
+      顔を出さない選択。身バレ回避という正当な理由も多いため、これ単独では
+      減点材料として弱い。他の欠落と重なったときに意味を持つ。
+    context_check: >-
+      他の欠落項目（写真枚数・日記・口コミ）と重なっているか。単独なら
+      減点を最小にとどめ、重なっているときだけ疑いを強める。
+    affects: { photo_reliability: -1 }
+    prior: { alpha: 2, beta: 3 }
+
+  - id: no_recent_diary
+    category: omission
+    label: 直近の写メ日記が無い
+    meta:
+      - { field: diary_count_recent, op: eq, value: 0 }
+    hypothesis: >-
+      本人の発信が無い。営業意欲が低いか、店側が完全に運用している。
+      当日の実像を確認する材料が存在しないことを意味する。
+    context_check: >-
+      出勤頻度と併せて読む。出勤しているのに日記が無いのは意欲面の示唆。
+    affects: { authenticity: -2, service_expectation: -1 }
+    prior: { alpha: 3, beta: 2 }
+
+  - id: sizes_undisclosed
+    category: omission
+    label: 3サイズ非公開
+    meta:
+      - { field: sizes_disclosed, op: is_false }
+    hypothesis: >-
+      数値を出さない選択。体型の婉曲表現と重なると乖離の疑いが強まる。
+    context_check: >-
+      体型の婉曲表現（ぽっちゃり等）と同時に出ているか。単独なら弱い信号。
+    affects: { photo_reliability: -1 }
+    prior: { alpha: 2, beta: 2 }
+
+  - id: few_reviews
+    category: omission
+    label: 口コミが極端に少ない
+    meta:
+      - { field: review_count, op: lte, value: 2 }
+    hypothesis: >-
+      第三者による検証材料が無い。新人なら当然だが、在籍が長いのに
+      口コミが付かないのはリピートが発生していない可能性。
+    context_check: >-
+      在籍期間で意味が反転する。在籍1ヶ月なら情報不足として中立に扱い、
+      在籍1年で口コミ2件以下なら明確な負のシグナルとして扱う。
+    affects: { landmine_risk: 1 }
+    prior: { alpha: 2, beta: 2 }
+
+  - id: thin_profile
+    category: omission
+    label: 本文が極端に短い
+    meta:
+      - { field: profile_length, op: lte, value: 120 }
+    hypothesis: >-
+      書くことが無いか、書く気が無い。いずれにせよ判断材料が乏しい。
+    context_check: >-
+      短くても具体性が高い場合（固有名詞や明確なサービス方針がある）は
+      減点しない。中身の無い定型文で短い場合のみ疑いを強める。
+    affects: { service_expectation: -1, authenticity: -1 }
+    prior: { alpha: 2, beta: 2 }
+
+  # ------------------------------------------------------------------
+  # D. 需給シグナル — 売れ行きの裏返し
+  # ------------------------------------------------------------------
+  - id: heavy_discount
+    category: economic
+    label: 割引の多用
+    patterns:
+      - "割引"
+      - "半額"
+      - "OFF"
+      - "オフ"
+      - "特別価格"
+      - "イベント価格"
+      - "お試し価格"
+    min_count: 2
+    hypothesis: >-
+      価格を下げないと枠が埋まらない状態の示唆。値引きは需要不足の
+      最も分かりやすい表れである。
+    context_check: >-
+      店舗全体のキャンペーンなのか、この嬢個人に付いた割引なのかを区別する。
+      店舗全体なら個人の評価材料にはならない。
+    affects: { landmine_risk: 1 }
+    prior: { alpha: 2, beta: 2 }
+
+  - id: urgency_always
+    category: economic
+    label: 残枠アピール
+    patterns:
+      - "本日ラスト"
+      - "残り\\s*[0-9０-９]\\s*枠"
+      - "お急ぎ"
+      - "お早めに"
+      - "今すぐ"
+    hypothesis: >-
+      常設されている場合、実際の残枠ではなく即決を促す演出。
+    context_check: >-
+      恒常的に掲出されているかは1回の閲覧では分からない。判断を保留し、
+      再訪して同じ文言が残っているかの確認を促す。
+    affects: { authenticity: -1 }
+    prior: { alpha: 2, beta: 2 }
+
+  - id: long_running_newbie
+    category: economic
+    label: 新人表記の長期使い回し
+    patterns:
+      - "新人"
+      - "デビュー"
+      - "入店したばかり"
+    meta:
+      - { field: tenure_months, op: gte, value: 3 }
+    require: all
+    hypothesis: >-
+      在籍が3ヶ月以上あるのに新人表記が残っている。新人料金・新人枠で
+      集客を続けている状態で、実質的には売れ行きが伸びていない示唆。
+    context_check: >-
+      在籍期間の申告が正確か。店の表記が更新されていないだけの可能性もある。
+    affects: { landmine_risk: 2, authenticity: -1 }
+    prior: { alpha: 3, beta: 1 }
+
+  - id: new_but_top_ranked
+    category: economic
+    label: 在籍浅いのに人気上位
+    patterns:
+      - "ランキング"
+      - "人気"
+      - "指名"
+    meta:
+      - { field: tenure_months, op: lte, value: 2 }
+    require: all
+    hypothesis: >-
+      在籍が浅いのに人気上位という表示は、実績ではなく店側の推し出し
+      （新人プッシュ）による可能性が高い。
+    context_check: >-
+      口コミ件数が人気表示に見合っているか。口コミが少ないまま人気表示
+      だけがあるなら、店側の演出と判断する。
+    affects: { authenticity: -2 }
+    prior: { alpha: 2, beta: 2 }
+
+  # ------------------------------------------------------------------
+  # E. 文体 — 誰が書いたのか
+  # ------------------------------------------------------------------
+  - id: shop_voice
+    category: authorship
+    label: 店側の文体
+    patterns:
+      - "当店"
+      - "スタッフ(より|一同)"
+      - "店長(より|の)"
+      - "自信を持って(ご紹介|おすすめ)"
+      - "ご紹介(します|いたします)"
+      - "在籍しております"
+    hypothesis: >-
+      本人ではなく店側が書いた紹介文。この場合、記述内容は本人の自己認識ですら
+      なく集客用の定型文であり、サービス姿勢の判断材料にはならない。
+    context_check: >-
+      本文全体が店側文体なのか、店長コメント欄だけなのかを区別する。
+      本人コメント欄まで同じ文体なら、本人発信の情報はゼロと判断する。
+    affects: { authenticity: -2 }
+    prior: { alpha: 3, beta: 1 }
+
+  - id: third_person_self
+    category: authorship
+    label: 自分を三人称で語る
+    patterns:
+      - "[ぁ-んァ-ヶ一-龠]{2,5}(ちゃん|さん)は.{0,12}(です|ます|girl)"
+      - "そんな[ぁ-んァ-ヶ一-龠]{2,5}(ちゃん|さん)"
+    hypothesis: >-
+      本人が自分を三人称で呼ぶ文体は、店側スタッフによる代筆の典型。
+    context_check: >-
+      キャラクター演出として本人が意図的に使っている可能性もある。
+      写メ日記の文体と一致するかで区別できる。
+    affects: { authenticity: -1 }
+    prior: { alpha: 2, beta: 2 }
+
+  - id: emoji_flood
+    category: authorship
+    label: 絵文字・記号の多用
+    patterns:
+      - "[♡♥❤💕💖✨🌸🎀💋🥰😍]"
+    min_count: 8
+    hypothesis: >-
+      装飾で文量を稼いでいる。実質的な情報量が少ないことの間接的な指標。
+    context_check: >-
+      絵文字を取り除いたあとに残る文章の情報量を評価する。残るものが
+      多ければ単なる文体の癖として無視してよい。
+    affects: { authenticity: -1 }
+    prior: { alpha: 2, beta: 3 }
+
+  # ------------------------------------------------------------------
+  # F. 信頼シグナル — 穿つだけだと全員「見送り」になるための逆張りの逆張り
+  # ------------------------------------------------------------------
+  - id: states_limits
+    category: positive
+    label: できないことを明記している
+    patterns:
+      - "(は|が)?(苦手|できません|出来ません|NG|ng)"
+      - "ご遠慮"
+      - "対応して(いません|おりません)"
+      - "無理です"
+    hypothesis: >-
+      最も強い正のシグナル。売り手が自ら不利な情報を開示しているため、
+      書かれている良い情報の信頼度も連動して上がる。期待値の事前調整が
+      できるので、当日のギャップによる不満が起きにくい。
+    context_check: >-
+      店側の定型 NG リスト（禁止事項の羅列）ではなく、本人の言葉で
+      書かれているかを確認する。本人の言葉なら評価を大きく上げる。
+    affects: { authenticity: 3, service_expectation: 1, landmine_risk: -2 }
+    prior: { alpha: 4, beta: 1 }
+
+  - id: concrete_specifics
+    category: positive
+    label: 具体的な固有名詞がある
+    patterns:
+      - "(好きな|ハマって|最近).{0,20}(アニメ|ゲーム|映画|ドラマ|漫画|ラーメン|カフェ|旅行|温泉|ライブ|サウナ)"
+      - "出身"
+      - "([0-9０-９]{1,2}年|去年|昨年).{0,10}(から|より)"
+    hypothesis: >-
+      店側の定型文には固有名詞がほとんど出ない。具体的な固有名詞の存在は
+      本人が書いている強い証拠であり、当日の会話の取っ掛かりにもなる。
+    context_check: >-
+      固有名詞が本文に自然に埋まっているか、テンプレの穴埋めに見えるか。
+    affects: { authenticity: 2 }
+    prior: { alpha: 3, beta: 1 }
+
+  - id: service_detail_rich
+    category: positive
+    label: サービス内容が具体的
+    patterns:
+      - "オプション"
+      - "マット"
+      - "密着"
+      - "洗体"
+      - "アロマ"
+      - "得意"
+      - "対応(可|できます)"
+    min_count: 3
+    hypothesis: >-
+      何をするのかが明示されている。期待値の擦り合わせができるため
+      当日の齟齬が起きにくく、サービス面の訴求材料があることの証明でもある。
+    context_check: >-
+      羅列が店舗共通のメニュー表の転記でないか。個人の得意分野として
+      書かれているなら評価を上げる。
+    affects: { service_expectation: 2, landmine_risk: -1 }
+    prior: { alpha: 3, beta: 1 }
+
+  - id: photo_rich
+    category: positive
+    label: 写真が多い
+    meta:
+      - { field: photo_count, op: gte, value: 5 }
+    hypothesis: >-
+      多数の写真を出せる＝見せられる状態にあることの証明。加工で
+      揃えるのは枚数が増えるほど難しくなる。
+    context_check: >-
+      同一ポーズ・同一構図の水増しでないか。角度や場面が異なるなら
+      信頼度を上げる。
+    affects: { photo_reliability: 2 }
+    prior: { alpha: 3, beta: 1 }
+
+  - id: diary_active
+    category: positive
+    label: 写メ日記が活発
+    meta:
+      - { field: diary_count_recent, op: gte, value: 3 }
+    hypothesis: >-
+      本人発信が継続している。当日の実像を確認する材料があり、
+      営業意欲も高い可能性が高い。
+    context_check: >-
+      内容が「出勤しました」だけの定型なら加点を小さくする。
+      客とのやり取りや具体的な出来事が書かれているなら加点を大きくする。
+    affects: { authenticity: 2, service_expectation: 1 }
+    prior: { alpha: 3, beta: 1 }
+
+  - id: long_tenure
+    category: positive
+    label: 長期在籍
+    meta:
+      - { field: tenure_months, op: gte, value: 12 }
+    hypothesis: >-
+      1年以上続いている＝一定の指名が入り続けている。この業界で
+      在籍期間は最も誤魔化しの利きにくい実績指標のひとつ。
+    context_check: >-
+      口コミ件数が在籍期間に見合っているか。長期在籍かつ口コミも
+      継続的にあるなら強い正のシグナル。
+    affects: { service_expectation: 2, landmine_risk: -2 }
+    prior: { alpha: 4, beta: 1 }

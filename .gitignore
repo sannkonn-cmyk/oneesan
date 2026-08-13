@@ -1,0 +1,18 @@
+node_modules/
+.next/
+out/
+next-env.d.ts
+*.tsbuildinfo
+
+# 個人データ（源氏名・店名・所感を含む）。絶対にコミットしない。
+data/
+*.db
+*.db-journal
+*.db-wal
+*.sqlite
+
+.env
+.env.local
+.env*.local
+
+.DS_Store
