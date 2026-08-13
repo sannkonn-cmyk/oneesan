@@ -26,13 +26,13 @@ let body = fs.existsSync(examplePath)
 body = body.replace(/^APP_PASSWORD=.*$/m, `APP_PASSWORD=${pin}`);
 fs.writeFileSync(envPath, body);
 
+// 罫線素片はコマンドプロンプトの既定フォントで化けるため、記号は ASCII に留める。
+console.log("");
+console.log("  ================================");
+console.log(`     合言葉は  ${pin}  です`);
+console.log("  ================================");
 console.log("");
 console.log("  設定ファイル .env.local を作りました。");
-console.log("");
-console.log("  ┌──────────────────────────────┐");
-console.log(`  │   合言葉は  ${pin}   です     │`);
-console.log("  └──────────────────────────────┘");
-console.log("");
-console.log("  スマホやブラウザで最初に一度だけ聞かれます。");
+console.log("  この合言葉は、ブラウザとスマホで最初に一度だけ聞かれます。");
 console.log("  忘れたら .env.local の APP_PASSWORD を見てください。");
 console.log("");

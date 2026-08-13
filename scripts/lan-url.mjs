@@ -25,7 +25,7 @@ const addresses = Object.entries(os.networkInterfaces())
 const line = (s) => console.log(`  ${s}`);
 
 console.log("");
-line("─".repeat(46));
+line("=".repeat(46));
 line("");
 line("  この PC で開く");
 line(`    http://localhost:${PORT}`);
@@ -49,5 +49,5 @@ if (addresses.length === 0) {
 line("");
 line("  止めるときは  Ctrl + C");
 line("");
-line("─".repeat(46));
+line("=".repeat(46));
 console.log("");

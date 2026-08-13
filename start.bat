@@ -1,36 +1,64 @@
 @echo off
-rem Windows 用のワンクリック起動。このファイルをダブルクリックしてください。
-chcp 65001 >nul
+rem ---------------------------------------------------------------
+rem Windows one-click launcher.
+rem
+rem This file is intentionally ASCII-only. cmd.exe reads .bat files
+rem using the system ANSI code page (CP932 on Japanese Windows), so
+rem UTF-8 Japanese text inside a .bat can corrupt the parser and make
+rem the window close instantly with no message. Japanese guidance is
+rem printed from Node instead (scripts/bootstrap.mjs, lan-url.mjs).
+rem ---------------------------------------------------------------
+setlocal
+chcp 65001 >nul 2>nul
 cd /d "%~dp0"
-title お姉さん投資判定
+title Oneesan
 
 echo.
-echo   お姉さん投資判定 を起動します
+echo   Starting up...
 echo.
 
 where node >nul 2>nul
 if errorlevel 1 (
-  echo   Node.js が見つかりません。
-  echo   https://nodejs.org から LTS 版をインストールしてから、
-  echo   もう一度このファイルをダブルクリックしてください。
+  echo   [ERROR] Node.js was not found.
+  echo.
+  echo   Install the LTS version from https://nodejs.org
+  echo   restart Windows, then run this file again.
   echo.
   pause
   exit /b 1
 )
 
-if not exist node_modules (
-  echo   初回準備をしています。数分かかります...
+where npm >nul 2>nul
+if errorlevel 1 (
+  echo   [ERROR] npm was not found. Please reinstall Node.js.
+  echo.
+  pause
+  exit /b 1
+)
+
+if not exist "node_modules\" (
+  echo   First-time setup. This takes a few minutes. Please wait...
   echo.
   call npm install
-  if errorlevel 1 goto fail
+  if errorlevel 1 (
+    echo.
+    echo   [ERROR] Setup failed. Please send the messages above.
+    echo.
+    pause
+    exit /b 1
+  )
 )
 
 call npm run go
-if errorlevel 1 goto fail
-exit /b 0
+if errorlevel 1 (
+  echo.
+  echo   [ERROR] Failed to start. Please send the messages above.
+  echo.
+  pause
+  exit /b 1
+)
 
-:fail
+rem Reached after Ctrl+C. Keep the window open so nothing vanishes silently.
 echo.
-echo   起動に失敗しました。上のメッセージを確認してください。
+echo   Stopped.
 pause
-exit /b 1
