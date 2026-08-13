@@ -1,0 +1,859 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>お姉さん投資判定 — 画面モック</title>
+<style>
+  :root{
+    --ink:#0b0d10; --panel:#161b21; --edge:#2b333c;
+    /* 補助テキストは 8b98a5 だと本文に対して弱かったので上げた */
+    --muted:#a7b4c2; --muted-strong:#c2ccd6;
+    --accent:#e8b26a; --good:#6fc48a; --warn:#e2b055; --bad:#e08072;
+    --text:#eef3f8;
+  }
+  *{box-sizing:border-box}
+  body{
+    margin:0; background:var(--ink); color:var(--text);
+    /* 日本語を明示的に指定しないと欧文フォントの合成書体になり字面が痩せる */
+    font-family:system-ui,-apple-system,"Hiragino Kaku Gothic ProN","Hiragino Sans",
+                "Noto Sans JP","Yu Gothic UI","Meiryo",sans-serif;
+    font-size:16px;
+    -webkit-font-smoothing:antialiased; line-height:1.8;
+    text-spacing-trim:trim-start;
+  }
+  .wrap{max-width:760px;margin:0 auto;padding:16px 16px 80px}
+
+  /* ---- モック用の枠（実アプリには存在しない） ---- */
+  .mockbar{
+    position:sticky;top:0;z-index:20;background:#05070a;border-bottom:1px solid var(--edge);
+    padding:10px 16px;margin:-16px -16px 18px;
+  }
+  .mockbar .ttl{font-size:12px;color:var(--muted);letter-spacing:.08em;margin-bottom:8px}
+  .tabs{display:flex;gap:6px;flex-wrap:wrap}
+  .tabs button{
+    background:transparent;border:1px solid var(--edge);color:var(--muted);
+    border-radius:8px;padding:7px 12px;font-size:13.5px;cursor:pointer;font-family:inherit;
+  }
+  .tabs button:hover{background:#1a2027;color:var(--text)}
+  .tabs button[aria-selected="true"]{background:var(--accent);border-color:var(--accent);color:var(--ink);font-weight:700}
+  .screen{display:none}
+  .screen.on{display:block}
+  .note{
+    border-left:3px solid var(--accent);background:rgba(232,178,106,.08);
+    padding:10px 14px;font-size:14px;line-height:1.8;color:#e0c9a6;margin:0 0 18px;border-radius:0 6px 6px 0;
+  }
+
+  /* ---- アプリ本体のスタイル（globals.css を写したもの） ---- */
+  header.app{display:flex;align-items:center;justify-content:space-between;margin-bottom:20px}
+  header.app .brand{font-size:15px;font-weight:700;letter-spacing:.03em;color:var(--accent)}
+  header.app nav{display:flex;gap:2px;font-size:13.5px}
+  header.app nav span{padding:5px 9px;border-radius:6px;color:var(--muted)}
+  header.app nav span.cur{background:#1a2027;color:var(--text)}
+
+  .card{border:1px solid var(--edge);background:var(--panel);border-radius:12px;padding:18px;margin-bottom:14px}
+  .label{display:block;font-size:13px;font-weight:600;color:var(--muted);margin-bottom:5px;letter-spacing:.02em}
+  .input,textarea,select{
+    width:100%;border:1px solid var(--edge);background:var(--ink);color:var(--text);
+    border-radius:8px;padding:9px 12px;font-size:16px;font-family:inherit;
+  }
+  textarea{resize:vertical;line-height:1.9}
+  .input::placeholder,textarea::placeholder{color:#6b7684}
+  .btn{display:inline-flex;align-items:center;justify-content:center;gap:8px;border-radius:8px;
+    padding:13px 16px;font-size:15px;font-weight:700;border:1px solid transparent;cursor:pointer;font-family:inherit}
+  .btn-primary{background:var(--accent);color:var(--ink)}
+  .btn-ghost{background:transparent;border-color:var(--edge);color:var(--text)}
+  .chip{display:inline-flex;align-items:center;border:1px solid var(--edge);border-radius:999px;
+    padding:3px 10px;font-size:12.5px;color:var(--muted);white-space:nowrap}
+  .chip.dash{border-style:dashed}
+  .chip.good{border-color:rgba(95,179,122,.45);color:var(--good)}
+  .chip.bad{border-color:rgba(207,107,92,.45);color:var(--bad)}
+  .row{display:flex;gap:10px;flex-wrap:wrap;align-items:center}
+  h2.sec{font-size:15px;font-weight:700;color:var(--text);margin:24px 0 10px}
+  .muted{color:var(--muted)}
+  .sm{font-size:13.5px;line-height:1.75}
+  .grid2{display:grid;grid-template-columns:repeat(2,1fr);gap:10px}
+  .grid3{display:grid;grid-template-columns:repeat(3,1fr);gap:10px}
+  @media(max-width:520px){.grid3{grid-template-columns:repeat(2,1fr)}}
+
+  /* verdict */
+  .verdict{border-radius:8px;border:1px solid;padding:7px 13px;font-size:14px;font-weight:700;white-space:nowrap}
+  .v-ok{background:rgba(95,179,122,.15);color:var(--good);border-color:rgba(95,179,122,.4)}
+  .v-cond{background:rgba(217,164,65,.15);color:var(--warn);border-color:rgba(217,164,65,.4)}
+  .v-no{background:rgba(207,107,92,.15);color:var(--bad);border-color:rgba(207,107,92,.4)}
+
+  /* score bars */
+  .bar-row{display:flex;align-items:center;gap:12px;margin-bottom:8px}
+  .bar-row .nm{width:134px;flex:none;font-size:13px;color:var(--muted-strong)}
+  .bar-row .track{flex:1;height:9px;background:var(--edge);border-radius:999px;overflow:hidden}
+  /* インラインのままだと height が効かないので block にする */
+  .bar-row .fill{display:block;height:100%;border-radius:999px}
+  .bar-row .val{width:32px;flex:none;text-align:right;font-size:13px;font-weight:600;
+    font-variant-numeric:tabular-nums;color:var(--text)}
+  .f-good{background:var(--good)}.f-warn{background:var(--warn)}.f-bad{background:var(--bad)}
+
+  /* reading card */
+  /* 日本語に italic を当てると合成斜体になって読みにくいので、引用は書体を変えず
+     左罫線と背景だけで区別する。 */
+  blockquote{margin:0;border-left:3px solid var(--accent);padding:2px 0 2px 12px;
+    font-size:15.5px;font-weight:600;line-height:1.75;color:var(--text)}
+  .conf{flex:none;font-size:13px;font-weight:700;font-variant-numeric:tabular-nums}
+  .c-hi{color:var(--bad)}.c-mid{color:var(--warn)}.c-lo{color:var(--muted)}
+  .blk{margin-top:14px}
+  .blk p.body{margin:0;font-size:16px;line-height:1.95;color:var(--text)}
+  details{margin-top:14px}
+  summary{cursor:pointer;list-style:none;font-size:13.5px;font-weight:600;color:var(--accent)}
+  summary::-webkit-details-marker{display:none}
+  /* 反証ボックスは裏読みカードの中だけ。辞書の説明文まで箱にしない */
+  article.card details p{margin:8px 0 0;background:rgba(11,13,16,.6);border-radius:8px;padding:13px;
+    font-size:14.5px;line-height:1.9;color:var(--muted-strong)}
+  mark{background:rgba(232,178,106,.2);color:#f5dcb8;border-radius:3px;padding:1px 3px}
+
+  ul.plain{list-style:none;margin:0;padding:0}
+  ul.plain li{display:flex;gap:9px;font-size:15px;line-height:1.9;color:var(--muted-strong);margin-bottom:10px}
+  ul.plain li .mk{flex:none}
+
+  .qitem{border-top:1px solid var(--edge);padding:14px 0}
+  .qitem:first-of-type{border-top:0;padding-top:0}
+  .qitem p{margin:0 0 9px;font-size:15px;line-height:1.8}
+  .seg{display:flex;gap:6px;flex-wrap:wrap}
+  .seg label{border:1px solid var(--edge);border-radius:999px;padding:5px 12px;font-size:13.5px;color:var(--muted);cursor:pointer}
+  .seg input{display:none}
+  .seg input:checked + span{color:var(--ink)}
+  .seg label:has(input:checked){background:var(--accent);border-color:var(--accent);color:var(--ink);font-weight:600}
+
+  table{width:100%;border-collapse:collapse;font-size:14.5px}
+  th,td{text-align:left;padding:11px 8px;border-bottom:1px solid var(--edge);line-height:1.7}
+  th{font-size:13px;color:var(--muted);font-weight:600}
+  tr:last-child td{border-bottom:0}
+
+  .hist{display:block;border:1px solid var(--edge);background:var(--panel);border-radius:12px;
+    padding:15px;margin-bottom:10px;text-decoration:none;color:inherit}
+  .hist .top{display:flex;justify-content:space-between;align-items:flex-start;gap:10px;margin-bottom:6px}
+  .hist .nm{font-size:16.5px;font-weight:700}
+  .stars{color:var(--accent);letter-spacing:2px;font-size:15px}
+
+  .lex{border:1px solid var(--edge);border-radius:10px;background:var(--panel);margin-bottom:8px}
+  .lex > summary{padding:14px;color:var(--text);font-size:15.5px;font-weight:600;display:flex;
+    justify-content:space-between;align-items:center;gap:10px}
+  .lex .inner{padding:0 14px 15px;border-top:1px solid var(--edge);margin-top:2px;padding-top:13px;font-size:14.5px;color:var(--muted-strong);line-height:1.9}
+  .rate{font-size:13px;font-weight:600;font-variant-numeric:tabular-nums;color:var(--muted);flex:none}
+  .catbar{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:14px}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<div class="mockbar">
+  <div class="ttl">画面モック（静的HTML・動作しません）</div>
+  <div class="tabs" id="tabs">
+    <button aria-selected="true" data-t="s1">① 判定入力</button>
+    <button data-t="s2">② 判定結果</button>
+    <button data-t="s3">③ 再レビュー</button>
+    <button data-t="s4">④ 履歴</button>
+    <button data-t="s5">⑤ 実績記録</button>
+    <button data-t="s6">⑥ 過去登録</button>
+    <button data-t="s7">⑦ 辞書</button>
+  </div>
+</div>
+
+<!-- ================================================== ① 判定入力 -->
+<section class="screen on" id="s1">
+  <p class="note">プロフィールを貼る画面。構造情報（写真枚数など本文から読めない情報）は任意入力で、未入力は「無い」ではなく「不明」として扱われます。</p>
+
+  <header class="app">
+    <span class="brand">お姉さん投資判定</span>
+    <nav><span class="cur">判定</span><span>履歴</span><span>過去登録</span><span>辞書</span></nav>
+  </header>
+
+  <div class="card">
+    <div class="grid2" style="margin-bottom:12px">
+      <div><span class="label">店名</span><input class="input" value="ソープ／東京吉原 △△△"></div>
+      <div><span class="label">源氏名</span><input class="input" value="ゆい"></div>
+    </div>
+    <span class="label">プロフィール本文（コピペ）</span>
+    <textarea rows="11">はじめまして♡ゆいと申します(*^^*)
+当店No.1の呼び声も高い、業界未経験のふんわり癒し系お姉さんです！
+とにかく愛嬌には自信あり◎抜群のスタイルと評判の名器で、絶対に満足させちゃいます♡
+アナル舐めは苦手なのでご遠慮ください。それ以外のオプションは基本対応可能です。
+マットと密着系が得意で、洗体はゆっくり時間をかけるタイプ。
+最近サウナにハマってて、休みの日は錦糸町のニューウイングによく行きます。
+本日ラスト1枠！ご新規様割引＋イベント価格でお得です♪</textarea>
+    <p class="sm muted" style="margin:6px 0 0">312文字</p>
+  </div>
+
+  <div class="card">
+    <div class="row" style="justify-content:space-between;margin-bottom:12px">
+      <strong style="font-size:15px">構造情報</strong>
+      <span class="sm muted">任意・未入力は「不明」扱い</span>
+    </div>
+    <div class="grid3">
+      <div><span class="label">写真枚数</span><input class="input" value="6"></div>
+      <div><span class="label">口コミ件数</span><input class="input" value="4"></div>
+      <div><span class="label">在籍月数</span><input class="input" value="18"></div>
+      <div><span class="label">週の出勤日数</span><input class="input" value="3"></div>
+      <div><span class="label">料金(円)</span><input class="input" value="22000"></div>
+      <div><span class="label">直近2週の日記</span><input class="input" value="5"></div>
+    </div>
+    <div class="row" style="margin-top:12px">
+      <span class="chip good">顔出し あり</span>
+      <span class="chip bad">3サイズ 非公開</span>
+      <span class="chip good">年齢 公開</span>
+      <span class="chip dash">タップで切替</span>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="row" style="justify-content:space-between;margin-bottom:10px">
+      <strong style="font-size:15px">辞書が反応した項目 <span class="muted" style="font-weight:400">17件</span></strong>
+      <span class="sm muted">＝疑いの候補。結論ではありません</span>
+    </div>
+    <div class="row" style="gap:6px">
+      <span class="chip bad">名器アピール</span>
+      <span class="chip bad">最上級の煽り</span>
+      <span class="chip bad">保証・断定</span>
+      <span class="chip bad">人気アピール</span>
+      <span class="chip bad">素人感アピール</span>
+      <span class="chip bad">愛嬌・癒し系</span>
+      <span class="chip bad">割引の多用</span>
+      <span class="chip bad">残枠アピール</span>
+      <span class="chip bad">絵文字の多用</span>
+      <span class="chip bad">3サイズ非公開</span>
+      <span class="chip bad">口コミが少ない</span>
+      <span class="chip good">できないことを明記</span>
+      <span class="chip good">具体的な固有名詞</span>
+      <span class="chip good">サービスが具体的</span>
+      <span class="chip good">写真が多い</span>
+      <span class="chip good">日記が活発</span>
+      <span class="chip good">長期在籍</span>
+    </div>
+  </div>
+
+  <div class="row" style="justify-content:space-between">
+    <button class="btn btn-primary" style="flex:1">この子を判定する</button>
+  </div>
+  <p class="sm muted" style="text-align:center;margin-top:10px">
+    Claude Code CLI（サブスク枠）で実行 ・ 所要 20〜40秒
+  </p>
+</section>
+
+<!-- ================================================== ② 判定結果 -->
+<section class="screen" id="s2">
+  <p class="note">判定結果。<b>穿った読みは3文以上</b>（何を疑うか／本文のどこが根拠か／今回その解釈を採る理由）を必須にしてあります。黄色ハイライトが本文からの一字一句の引用です。</p>
+
+  <header class="app">
+    <span class="brand">お姉さん投資判定</span>
+    <nav><span class="cur">判定</span><span>履歴</span><span>過去登録</span><span>辞書</span></nav>
+  </header>
+
+  <div class="card">
+    <div class="row" style="justify-content:space-between;align-items:flex-start;margin-bottom:14px">
+      <p style="margin:0;font-size:16.5px;line-height:1.95;flex:1">
+        煽り文句は店側テンプレの色が濃いが、その下に本人が書いたと分かる具体記述が確かに存在する。
+        広告部分を全部剥がすと「マット・密着・洗体を丁寧にやる在籍1年半の中堅で、アナル舐めは断る」
+        という像が残り、これは十分に指名材料になる。
+      </p>
+      <span class="verdict v-cond">条件付き</span>
+    </div>
+
+    <div class="bar-row"><span class="nm">サービス期待度</span><span class="track"><span class="fill f-good" style="width:72%"></span></span><span class="val">72</span></div>
+    <div class="bar-row"><span class="nm">写真の信頼度</span><span class="track"><span class="fill f-warn" style="width:58%"></span></span><span class="val">58</span></div>
+    <div class="bar-row"><span class="nm">本人が書いてる度</span><span class="track"><span class="fill f-warn" style="width:45%"></span></span><span class="val">45</span></div>
+    <div class="bar-row"><span class="nm">地雷リスク <span style="color:var(--bad);font-size:11.5px;font-weight:700">↑危険</span></span><span class="track"><span class="fill f-warn" style="width:38%"></span></span><span class="val">38</span></div>
+
+    <p style="border-top:1px solid var(--edge);margin:16px 0 0;padding-top:14px;font-size:15px;line-height:1.95;color:var(--muted-strong)">
+      「見送り」にしない理由は明確で、できないことを自分から書いているからです。売り手が自分に不利な情報を
+      開示している以上、他の記述の信頼度も連動して上がります。一方で本文の前半は完全に店の煽りテンプレなので、
+      写真とルックスに関する記述だけは割り引いて読む必要があります。「条件付き」の条件は下の確認事項2件です。
+    </p>
+  </div>
+
+  <h2 class="sec">裏読み <span class="muted" style="font-weight:400">（6件）</span></h2>
+
+  <!-- r1 -->
+  <article class="card">
+    <div class="row" style="justify-content:space-between;align-items:flex-start">
+      <blockquote>アナル舐めは苦手なのでご遠慮ください</blockquote>
+      <span class="conf c-lo">確度 15%</span>
+    </div>
+    <div class="blk"><span class="label">額面どおりの意味</span>
+      <p class="body" style="font-size:15px;color:var(--muted-strong)">このオプションだけは対応できないという事前告知。</p></div>
+    <div class="blk"><span class="label">穿った読み</span>
+      <p class="body">これは疑う対象ではなく、このプロフィールで最も価値のある一文です。集客のために書かれた広告文の中に
+        <mark>売り手にとって不利な情報</mark>が、しかも婉曲でなく名指しで入っている。断ることで機会損失が出ると
+        分かっていて書いている以上、当日その場で揉めたくない＝実際にやる気がない、という意思表示として素直に読めます。
+        重要なのは、この一文が同じ本文の他の記述の信頼度を引き上げることです。「オプションは基本対応可能」も、
+        できないものを個別に除外した上での「可能」なので、全対応を謳うだけのテンプレより実効性が高い。
+        今回この解釈を採るのは、直後に「それ以外は基本対応可能」と範囲を限定する文が続いており、
+        断り文句を免罪符にして全体をぼかす書き方になっていないためです。</p></div>
+    <details><summary>この読みが外れる条件を見る</summary>
+      <p>同じ店の他の在籍嬢のプロフィールにも同一の文言が入っている場合。その場合これは本人の意思ではなく
+        店の定型文であり、誠実さの証拠にはなりません。在籍一覧を3〜4人ぶん開いて確認できます。</p></details>
+    <div class="row" style="margin-top:12px"><span class="chip">states_limits</span>
+      <span class="chip">この観点の的中率 82%（実績11件）</span></div>
+  </article>
+
+  <!-- r2 -->
+  <article class="card">
+    <div class="row" style="justify-content:space-between;align-items:flex-start">
+      <blockquote>業界未経験のふんわり癒し系お姉さん</blockquote>
+      <span class="conf c-hi">確度 78%</span>
+    </div>
+    <div class="blk"><span class="label">額面どおりの意味</span>
+      <p class="body" style="font-size:15px;color:var(--muted-strong)">この業界で働くのが初めての、柔らかい雰囲気の女性。</p></div>
+    <div class="blk"><span class="label">穿った読み</span>
+      <p class="body">在籍月数と正面から矛盾します。構造情報では<mark>在籍18ヶ月</mark>、つまり1年半この店にいる人が
+        「業界未経験」を名乗り続けている。未経験表記が本当なら入店時点の話であって、18ヶ月放置されている＝
+        プロフィールが入店時から更新されていないか、集客のために意図的に残されているかのどちらかです。
+        さらに「癒し系」「ふんわり」はルックスを直接評価できないときに使われる代替語で、
+        <mark>愛嬌には自信あり</mark>と併走している点が典型的です。顔の良さを訴求できるなら、まず顔を訴求します。
+        今回この読みを強めに採るのは、後半の具体記述（マット・洗体・サウナ）が明らかに別人の筆致で、
+        前半だけが店の煽りテンプレとして浮いているためです。前半は本人の自己申告として読まない方が安全です。</p></div>
+    <details><summary>この読みが外れる条件を見る</summary>
+      <p>在籍18ヶ月が別店舗も含む通算で、この店では最近の移籍だった場合。また写メ日記の初回投稿が
+        直近3ヶ月以内なら、実質的な稼働開始が最近である可能性があります。日記を最古までさかのぼれば分かります。</p></details>
+    <div class="row" style="margin-top:12px"><span class="chip">amateur_claim</span>
+      <span class="chip">この観点の的中率 71%（実績7件・まだ振れ幅大）</span></div>
+  </article>
+
+  <!-- r3 -->
+  <article class="card">
+    <div class="row" style="justify-content:space-between;align-items:flex-start">
+      <blockquote>評判の名器で、絶対に満足させちゃいます</blockquote>
+      <span class="conf c-mid">確度 55%</span>
+    </div>
+    <div class="blk"><span class="label">額面どおりの意味</span>
+      <p class="body" style="font-size:15px;color:var(--muted-strong)">身体的な評価が高く、満足度に自信があるという主張。</p></div>
+    <div class="blk"><span class="label">穿った読み</span>
+      <p class="body">名器という語は本人が検証できない性質の主張で、書き手が誰であっても損をしないため、
+        訴求材料が薄いときの穴埋めとして使われやすい表現です。ここでは<mark>抜群のスタイル</mark>という
+        同じく検証不能な語と連続し、さらに<mark>絶対に</mark>という保証語まで重なっていて、
+        1文に検証不能な主張が3つ入っている状態です。ただし今回は割り引き方を変えるべき理由があります。
+        この文は前半の店テンプレ側に属していて、後半の本人パートには身体的アピールが一切なく、
+        代わりに<mark>マットと密着系が得意</mark>という行為ベースの記述が置かれている。
+        つまり誇張しているのは店であって本人ではない可能性が高く、本人パートの方を判断材料にすべきです。</p></div>
+    <details><summary>この読みが外れる条件を見る</summary>
+      <p>口コミにサービス内容の具体的な描写が複数あり、書き手が別人と分かる場合。ただし現在の口コミは4件しかなく、
+        母数として弱いことに注意が必要です。</p></details>
+    <div class="row" style="margin-top:12px"><span class="chip">meiki_claim</span>
+      <span class="chip">この観点の的中率 64%（実績14件）</span></div>
+  </article>
+
+  <!-- r4 -->
+  <article class="card">
+    <div class="row" style="justify-content:space-between;align-items:flex-start">
+      <blockquote>本日ラスト1枠！ご新規様割引＋イベント価格でお得です♪</blockquote>
+      <span class="conf c-mid">確度 60%</span>
+    </div>
+    <div class="blk"><span class="label">額面どおりの意味</span>
+      <p class="body" style="font-size:15px;color:var(--muted-strong)">残り枠が少なく、かつ割引が効く日である。</p></div>
+    <div class="blk"><span class="label">穿った読み</span>
+      <p class="body">残枠アピールと割引が同じ文に同居しているのが問題です。本当に埋まっているなら値引きは不要で、
+        値引きが必要なら埋まっていない。<mark>ラスト1枠</mark>と<mark>割引＋イベント価格</mark>は
+        需給の説明として両立しません。加えてこの手の文言はプロフィール本文に常設されていることが多く、
+        その場合「本日」は毎日「本日」です。ただし週3日出勤という条件下では、出勤日あたりの枠自体が
+        少ないので残1枠が事実である可能性も普通にあります。今回は確度を中程度に留め、
+        この文をもって集客難と断定はしません。判定を動かすのは残枠表示が固定かどうかの一点です。</p></div>
+    <details><summary>この読みが外れる条件を見る</summary>
+      <p>日を変えて同じページを見たときに、枠数の表示が変わっているか消えている場合。固定文言でなければ
+        この疑いは取り下げます。ブラウザのブックマークから翌日もう一度開けば確認できます。</p></details>
+    <div class="row" style="margin-top:12px"><span class="chip">urgency_always</span>
+      <span class="chip">この観点の的中率 69%（実績9件）</span></div>
+  </article>
+
+  <!-- r5 -->
+  <article class="card">
+    <div class="row" style="justify-content:space-between;align-items:flex-start">
+      <blockquote>マットと密着系が得意で、洗体はゆっくり時間をかけるタイプ</blockquote>
+      <span class="conf c-lo">確度 20%</span>
+    </div>
+    <div class="blk"><span class="label">額面どおりの意味</span>
+      <p class="body" style="font-size:15px;color:var(--muted-strong)">得意なプレイと、洗体の進め方の説明。</p></div>
+    <div class="blk"><span class="label">穿った読み</span>
+      <p class="body">ここは疑うより信用する側の記述です。得意分野を名指しするということは、書かなかった領域では
+        戦えないという情報開示でもあり、事後に照合可能な形になっています。<mark>ゆっくり時間をかける</mark>は
+        特に検証しやすく、実際に淡白なら次から指名されないので、書き手にとってリスクのある一文です。
+        懸念があるとすれば時間配分で、洗体に時間をかけるタイプは短いコースだと本番時間が圧縮されがちです。
+        今回の料金2.2万は標準的なショートコースの価格帯なので、コース選択だけは慎重に決めた方がよい。
+        記述そのものへの疑いではなく、こちらの選び方の問題として扱います。</p></div>
+    <details><summary>この読みが外れる条件を見る</summary>
+      <p>口コミに「あっさりしていた」「流れ作業だった」という趣旨の記述がある場合。その場合この自己申告は
+        テンプレであり、時間配分の懸念以前の問題になります。</p></details>
+    <div class="row" style="margin-top:12px"><span class="chip">service_detail_rich</span>
+      <span class="chip">この観点の的中率 77%（実績13件）</span></div>
+  </article>
+
+  <!-- r6 -->
+  <article class="card">
+    <div class="row" style="justify-content:space-between;align-items:flex-start">
+      <blockquote>3サイズ非公開 ／ 口コミ4件（在籍18ヶ月）</blockquote>
+      <span class="conf c-mid">確度 50%</span>
+    </div>
+    <div class="blk"><span class="label">額面どおりの意味</span>
+      <p class="body" style="font-size:15px;color:var(--muted-strong)">体型情報が出ておらず、蓄積された口コミも少ない。</p></div>
+    <div class="blk"><span class="label">穿った読み</span>
+      <p class="body">単体ではどちらも弱い材料ですが、組み合わせると意味が出ます。在籍1年半で口コミ4件は明確に少なく、
+        週3日出勤を勘案しても累計の接客数に対して書かれていない。口コミは満足した客が書くものなので、
+        少なさは「リピートされていない」か「そもそも指名が入っていない」のどちらかを示唆します。
+        3サイズ非公開がそこに重なると、体型が写真から想像するものと違う可能性を排除できません。
+        ただし店ごとに口コミ文化の差が非常に大きく、店全体で口コミが少ないだけということも普通にあります。
+        今回は他の在籍嬢との比較をしないと判断できないため、確度は中央に置いています。</p></div>
+    <details><summary>この読みが外れる条件を見る</summary>
+      <p>同じ店の他の嬢も同程度の口コミ件数（5件前後以下）である場合。店の傾向であって本人の問題ではありません。
+        在籍一覧の口コミ件数を上から数人ぶん見れば判断できます。</p></details>
+    <div class="row" style="margin-top:12px"><span class="chip">few_reviews</span>
+      <span class="chip dash">未検証（実績0件・辞書の初期値 55%）</span></div>
+  </article>
+
+  <div class="card">
+    <h2 style="margin:0 0 5px;font-size:15px;font-weight:700;color:var(--text)">書かれていないこと</h2>
+    <p class="sm muted" style="margin:0 0 12px">欠落は最も情報量が多い部分です。これらが分からないまま判断していることを意識してください。</p>
+    <ul class="plain">
+      <li><span class="mk" style="color:var(--bad)">–</span><span>年齢・体型の数値が一切ない。「ふんわり」「抜群のスタイル」はどちらの方向にも読める語で、これだけでは体型が判断できません。</span></li>
+      <li><span class="mk" style="color:var(--bad)">–</span><span>写真6枚の撮影時期が不明。枚数は多いが同一日にまとめて撮ったものなら、実質1時点の情報しかありません。</span></li>
+      <li><span class="mk" style="color:var(--bad)">–</span><span>コース時間と料金の対応が書かれていない。洗体に時間をかける旨がある以上、これが分からないと時間配分を判断できません。</span></li>
+      <li><span class="mk" style="color:var(--bad)">–</span><span>キス・生フェラなど主要オプションの個別可否。「基本対応可能」の範囲が確定していません。</span></li>
+    </ul>
+  </div>
+
+  <div class="card">
+    <h2 style="margin:0 0 5px;font-size:15px;font-weight:700;color:var(--text)">登楼前に確認すること</h2>
+    <p class="sm muted" style="margin:0 0 12px">判定が大きく動く順に並んでいます。答えを入れて再レビューすると、推測が事実に置き換わります。</p>
+
+    <div class="qitem">
+      <p>1. 在籍一覧を開き、他の嬢のプロフィールにも「アナル舐めは苦手」と同じ文言が入っていないか3〜4人ぶん見る</p>
+      <div class="seg">
+        <label><input type="radio" name="q1" checked><span>そのとおりだった</span></label>
+        <label><input type="radio" name="q1"><span>違った</span></label>
+        <label><input type="radio" name="q1"><span>分からなかった</span></label>
+        <label><input type="radio" name="q1"><span>未確認</span></label>
+      </div>
+    </div>
+    <div class="qitem">
+      <p>2. 写メ日記を最古までさかのぼり、初回投稿が18ヶ月前か、それとも直近数ヶ月かを見る</p>
+      <div class="seg">
+        <label><input type="radio" name="q2"><span>そのとおりだった</span></label>
+        <label><input type="radio" name="q2" checked><span>違った</span></label>
+        <label><input type="radio" name="q2"><span>分からなかった</span></label>
+        <label><input type="radio" name="q2"><span>未確認</span></label>
+      </div>
+    </div>
+    <div class="qitem">
+      <p>3. 翌日もう一度このページを開き、「本日ラスト1枠」の表示が変わるか固定かを見る</p>
+      <div class="seg">
+        <label><input type="radio" name="q3"><span>そのとおりだった</span></label>
+        <label><input type="radio" name="q3"><span>違った</span></label>
+        <label><input type="radio" name="q3"><span>分からなかった</span></label>
+        <label><input type="radio" name="q3" checked><span>未確認</span></label>
+      </div>
+    </div>
+    <div class="qitem">
+      <p>4. 電話予約時に「洗体をゆっくりやってもらう場合、何分コースが必要ですか」と聞き、即答かどうかを見る</p>
+      <div class="seg">
+        <label><input type="radio" name="q4"><span>そのとおりだった</span></label>
+        <label><input type="radio" name="q4"><span>違った</span></label>
+        <label><input type="radio" name="q4"><span>分からなかった</span></label>
+        <label><input type="radio" name="q4" checked><span>未確認</span></label>
+      </div>
+    </div>
+    <div class="qitem">
+      <p>5. 在籍一覧の他の嬢の口コミ件数を上から5人ぶん数え、4件が店として少ないのかを見る</p>
+      <div class="seg">
+        <label><input type="radio" name="q5" checked><span>そのとおりだった</span></label>
+        <label><input type="radio" name="q5"><span>違った</span></label>
+        <label><input type="radio" name="q5"><span>分からなかった</span></label>
+        <label><input type="radio" name="q5"><span>未確認</span></label>
+      </div>
+    </div>
+
+    <div style="margin-top:14px">
+      <span class="label">追記メモ（任意）</span>
+      <textarea rows="3" placeholder="確認して気づいたことがあれば">日記の初回投稿が3ヶ月前だった。18ヶ月は通算かもしれない。</textarea>
+    </div>
+    <button class="btn btn-primary" style="width:100%;margin-top:12px">確認結果をふまえて再レビュー</button>
+  </div>
+
+  <div class="row">
+    <button class="btn btn-ghost" style="flex:1">登楼実績を記録する</button>
+    <button class="btn btn-ghost" style="flex:1">履歴に保存</button>
+  </div>
+</section>
+
+<!-- ================================================== ③ 再レビュー -->
+<section class="screen" id="s3">
+  <p class="note">確認結果を入れて再判定した後の画面。<b>変化した読みと理由</b>が先頭に出ます。ここで白黒がついた項目だけが辞書の的中率に反映されます。</p>
+
+  <header class="app">
+    <span class="brand">お姉さん投資判定</span>
+    <nav><span class="cur">判定</span><span>履歴</span><span>過去登録</span><span>辞書</span></nav>
+  </header>
+
+  <div class="card">
+    <div class="row" style="justify-content:space-between;align-items:flex-start;margin-bottom:14px">
+      <p style="margin:0;font-size:16.5px;line-height:1.95;flex:1">
+        確認の結果、最大の懸念だった「未経験表記の使い回し」は誤読だった。実質3ヶ月の稼働で、
+        断り書きも本人固有のものと確認できた。残る不確定要素はコース時間の配分のみ。
+      </p>
+      <span class="verdict v-ok">指名推奨</span>
+    </div>
+    <div class="bar-row"><span class="nm">サービス期待度</span><span class="track"><span class="fill f-good" style="width:78%"></span></span><span class="val">78</span></div>
+    <div class="bar-row"><span class="nm">写真の信頼度</span><span class="track"><span class="fill f-warn" style="width:58%"></span></span><span class="val">58</span></div>
+    <div class="bar-row"><span class="nm">本人が書いてる度</span><span class="track"><span class="fill f-good" style="width:66%"></span></span><span class="val">66</span></div>
+    <div class="bar-row"><span class="nm">地雷リスク <span style="color:var(--bad);font-size:11.5px;font-weight:700">↑危険</span></span><span class="track"><span class="fill f-good" style="width:24%"></span></span><span class="val">24</span></div>
+    <p style="border-top:1px solid var(--edge);margin:16px 0 0;padding-top:14px;font-size:15px;line-height:1.95;color:var(--muted-strong)">
+      在籍一覧に同じ断り文言が無かったことで、r1の誠実さの読みが裏付けられました。あわせて
+      「18ヶ月＝プロフィール放置」の解釈が崩れたため、前半の煽りは店側の定型と切り分けて扱えます。
+      写真の信頼度だけは据え置きです。撮影時期を確認する手段が無く、推測が事実に変わっていないためです。
+    </p>
+  </div>
+
+  <div class="card" style="border-color:rgba(224,164,88,.4)">
+    <h2 style="margin:0 0 14px;font-size:15px;font-weight:700;color:var(--accent)">前回の判定からの変化</h2>
+    <div style="margin-bottom:14px">
+      <div class="row" style="gap:8px;font-size:13px;font-weight:600;font-variant-numeric:tabular-nums;margin-bottom:6px">
+        <span class="chip">r2</span><span class="muted">確度 78%</span>
+        <span style="color:var(--good)">→ 25% ▼</span>
+      </div>
+      <p style="margin:0;font-size:15px;line-height:1.95;color:var(--muted-strong)">
+        写メ日記の初回投稿が3ヶ月前だったため、「18ヶ月プロフィール放置」の前提が崩れました。
+        在籍月数は通算または店側の管理値で、実稼働は3ヶ月とみるのが自然です。未経験表記の使い回しという
+        読みは取り下げますが、「癒し系＝ルックス代替語」の部分は残るため0にはしていません。
+      </p>
+    </div>
+    <div style="margin-bottom:14px">
+      <div class="row" style="gap:8px;font-size:13px;font-weight:600;font-variant-numeric:tabular-nums;margin-bottom:6px">
+        <span class="chip">r1</span><span class="muted">確度 15%</span>
+        <span style="color:var(--good)">→ 8% ▼</span>
+      </div>
+      <p style="margin:0;font-size:15px;line-height:1.95;color:var(--muted-strong)">
+        他の在籍嬢に同一文言が無いことを確認済み。店の定型文ではなく本人の意思表示と確定したため、
+        誠実さのシグナルとして全面的に採用します。
+      </p>
+    </div>
+    <div>
+      <div class="row" style="gap:8px;font-size:13px;font-weight:600;font-variant-numeric:tabular-nums;margin-bottom:6px">
+        <span class="chip">r6</span><span class="muted">確度 50%</span>
+        <span style="color:var(--bad)">→ 62% ▲</span>
+      </div>
+      <p style="margin:0;font-size:15px;line-height:1.95;color:var(--muted-strong)">
+        他の嬢は口コミ20件前後あり、店として少ないわけではないと分かりました。実稼働3ヶ月なら4件は
+        妥当とも言えるので大きくは上げていませんが、「店の傾向」という反証は消えました。
+      </p>
+    </div>
+  </div>
+
+  <div class="card">
+    <h2 style="margin:0 0 5px;font-size:15px;font-weight:700;color:var(--text)">辞書に記録された結果</h2>
+    <p class="sm muted" style="margin:0 0 12px">白黒がついた項目だけが学習されます。決着していないものは記録しません。</p>
+    <table>
+      <tr><th>辞書項目</th><th>結果</th><th>的中率の変化</th></tr>
+      <tr><td>states_limits</td><td><span style="color:var(--good)">疑いが外れた</span></td><td class="muted">82% → 83%（12件）</td></tr>
+      <tr><td>amateur_claim</td><td><span style="color:var(--good)">疑いが外れた</span></td><td class="muted">71% → 63%（8件）</td></tr>
+      <tr><td>few_reviews</td><td><span style="color:var(--bad)">疑いが的中</span></td><td class="muted">未検証 → 100%（1件）</td></tr>
+    </table>
+  </div>
+
+  <h2 class="sec">当日その場で見ること</h2>
+  <div class="card">
+    <ul class="plain">
+      <li><span class="mk muted">1.</span><span>受付でコース時間を決める前に、洗体込みで何分必要かを本人に直接聞ける状況か確認する</span></li>
+      <li><span class="mk muted">2.</span><span>入室時の顔・体型が写真6枚のうちどれに一番近いかを見る（写真の信頼度がここでしか検証できない）</span></li>
+      <li><span class="mk muted">3.</span><span>「サウナ」の話題を振り、錦糸町のニューウイングの話が具体的に返ってくるか見る</span></li>
+    </ul>
+  </div>
+</section>
+
+<!-- ================================================== ④ 履歴 -->
+<section class="screen" id="s4">
+  <p class="note">判定した子の一覧。判定だけで終わった記録と、登楼実績まで入った記録が区別されます。実績が入ったものだけが辞書の的中率に効きます。</p>
+
+  <header class="app">
+    <span class="brand">お姉さん投資判定</span>
+    <nav><span>判定</span><span class="cur">履歴</span><span>過去登録</span><span>辞書</span></nav>
+  </header>
+
+  <div class="card" style="padding:12px 16px">
+    <div class="row" style="justify-content:space-between">
+      <span class="sm muted">判定 14件 ／ 実績あり 6件</span>
+      <span class="row" style="gap:6px">
+        <span class="chip" style="border-color:var(--accent);color:var(--accent)">すべて</span>
+        <span class="chip">実績待ち</span>
+        <span class="chip">実績あり</span>
+      </span>
+    </div>
+  </div>
+
+  <a class="hist">
+    <div class="top">
+      <div>
+        <div class="nm">ゆい <span class="sm muted" style="font-weight:400">／ 東京吉原 △△△</span></div>
+        <div class="sm muted">2026-08-13 ・ 再レビュー済み</div>
+      </div>
+      <span class="verdict v-ok" style="font-size:12.5px;padding:5px 10px">指名推奨</span>
+    </div>
+    <div class="row" style="gap:6px;margin-top:8px">
+      <span class="chip">states_limits</span><span class="chip">amateur_claim</span><span class="chip">few_reviews</span>
+      <span class="chip dash">実績待ち</span>
+    </div>
+  </a>
+
+  <a class="hist">
+    <div class="top">
+      <div>
+        <div class="nm">まりん <span class="sm muted" style="font-weight:400">／ 川崎堀之内 ○○○</span></div>
+        <div class="sm muted">2026-08-02 ・ 登楼済み</div>
+      </div>
+      <span class="verdict v-cond" style="font-size:12.5px;padding:5px 10px">条件付き</span>
+    </div>
+    <div class="row" style="justify-content:space-between;margin-top:8px">
+      <span class="row" style="gap:6px">
+        <span class="chip bad">meiki_claim 的中</span><span class="chip good">photo_rich 外れ</span>
+      </span>
+      <span class="stars">★★★☆☆</span>
+    </div>
+  </a>
+
+  <a class="hist">
+    <div class="top">
+      <div>
+        <div class="nm">あやの <span class="sm muted" style="font-weight:400">／ 横浜曙町 □□□</span></div>
+        <div class="sm muted">2026-07-21 ・ 登楼済み</div>
+      </div>
+      <span class="verdict v-no" style="font-size:12.5px;padding:5px 10px">見送り</span>
+    </div>
+    <div class="row" style="justify-content:space-between;margin-top:8px">
+      <span class="row" style="gap:6px">
+        <span class="chip bad">no_face_photo 的中</span><span class="chip bad">urgency_always 的中</span>
+      </span>
+      <span class="stars">★★☆☆☆</span>
+    </div>
+  </a>
+
+  <a class="hist">
+    <div class="top">
+      <div>
+        <div class="nm">しおり <span class="sm muted" style="font-weight:400">／ 東京吉原 ◇◇◇</span></div>
+        <div class="sm muted">2026-07-09 ・ 判定のみ</div>
+      </div>
+      <span class="verdict v-cond" style="font-size:12.5px;padding:5px 10px">条件付き</span>
+    </div>
+    <div class="row" style="gap:6px;margin-top:8px">
+      <span class="chip">superlative_hype</span><span class="chip">thin_profile</span><span class="chip dash">実績待ち</span>
+    </div>
+  </a>
+</section>
+
+<!-- ================================================== ⑤ 実績記録 -->
+<section class="screen" id="s5">
+  <p class="note">登楼後に結果を入れる画面。ここが学習の本体です。<b>各裏読みが当たっていたか</b>を一つずつ答えると、辞書の的中率が更新されます。</p>
+
+  <header class="app">
+    <span class="brand">お姉さん投資判定</span>
+    <nav><span>判定</span><span class="cur">履歴</span><span>過去登録</span><span>辞書</span></nav>
+  </header>
+
+  <div class="card">
+    <div class="row" style="justify-content:space-between;margin-bottom:4px">
+      <strong style="font-size:17px">ゆい ／ 東京吉原 △△△</strong>
+      <span class="chip">判定 2026-08-13</span>
+    </div>
+    <p class="sm muted" style="margin:0">判定は「指名推奨」でした。実際どうだったかを入れてください。</p>
+  </div>
+
+  <div class="card">
+    <span class="label">登楼日 ／ コース</span>
+    <div class="grid2" style="margin-bottom:14px">
+      <input class="input" value="2026-08-20">
+      <input class="input" value="90分 / 28,000円">
+    </div>
+    <div class="grid2">
+      <div><span class="label">総合満足度</span><div class="stars" style="font-size:20px">★★★★☆</div></div>
+      <div><span class="label">サービス</span><div class="stars" style="font-size:20px">★★★★★</div></div>
+      <div><span class="label">写真との一致</span><div class="stars" style="font-size:20px">★★★☆☆</div></div>
+      <div><span class="label">接客態度</span><div class="stars" style="font-size:20px">★★★★☆</div></div>
+    </div>
+  </div>
+
+  <div class="card">
+    <h2 style="margin:0 0 5px;font-size:15px;font-weight:700;color:var(--text)">各裏読みは当たっていましたか</h2>
+    <p class="sm muted" style="margin:0 0 12px">分からなかったものは「判定不能」のままで構いません。推測で埋めると辞書が汚れます。</p>
+
+    <div class="qitem">
+      <p><span class="chip" style="margin-right:6px">states_limits</span>できないことを明記＝誠実さのシグナル</p>
+      <div class="seg">
+        <label><input type="radio" name="o1" checked><span>そのとおりだった</span></label>
+        <label><input type="radio" name="o1"><span>違った</span></label>
+        <label><input type="radio" name="o1"><span>判定不能</span></label>
+      </div>
+    </div>
+    <div class="qitem">
+      <p><span class="chip" style="margin-right:6px">service_detail_rich</span>マット・密着・洗体が実際に丁寧</p>
+      <div class="seg">
+        <label><input type="radio" name="o2" checked><span>そのとおりだった</span></label>
+        <label><input type="radio" name="o2"><span>違った</span></label>
+        <label><input type="radio" name="o2"><span>判定不能</span></label>
+      </div>
+    </div>
+    <div class="qitem">
+      <p><span class="chip" style="margin-right:6px">aikyou_substitute</span>「癒し系」はルックスを訴求できない代替語</p>
+      <div class="seg">
+        <label><input type="radio" name="o3"><span>そのとおりだった</span></label>
+        <label><input type="radio" name="o3" checked><span>違った</span></label>
+        <label><input type="radio" name="o3"><span>判定不能</span></label>
+      </div>
+    </div>
+    <div class="qitem">
+      <p><span class="chip" style="margin-right:6px">meiki_claim</span>名器アピール＝サービスが薄いことの穴埋め</p>
+      <div class="seg">
+        <label><input type="radio" name="o4"><span>そのとおりだった</span></label>
+        <label><input type="radio" name="o4"><span>違った</span></label>
+        <label><input type="radio" name="o4" checked><span>判定不能</span></label>
+      </div>
+    </div>
+
+    <div style="margin-top:14px">
+      <span class="label">所感（次回の自分へ）</span>
+      <textarea rows="4">写真より実物の方が良かった。洗体は本当に時間をかけるタイプで90分でちょうど。60分だと足りない。断り書きのとおりアナルは無しだったが、それ以外は事前の説明どおりで齟齬なし。</textarea>
+    </div>
+    <button class="btn btn-primary" style="width:100%;margin-top:12px">記録して辞書を更新</button>
+  </div>
+</section>
+
+<!-- ================================================== ⑥ 過去登録 -->
+<section class="screen" id="s6">
+  <p class="note">過去に行った子を記憶ベースで流し込む画面。文章を貼るとLLMが構造化します。記憶ベースの記録は<b>重み0.5</b>で、実測と区別して学習されます。</p>
+
+  <header class="app">
+    <span class="brand">お姉さん投資判定</span>
+    <nav><span>判定</span><span>履歴</span><span class="cur">過去登録</span><span>辞書</span></nav>
+  </header>
+
+  <div class="card">
+    <span class="label">覚えている範囲で書いてください（形式は自由）</span>
+    <textarea rows="7">去年の暮れに川崎のソープで指名した「まりん」って子。プロフィールに名器って書いてあったけど、実際はサービス自体はかなり丁寧で当たりだった。写真は5枚くらいあったけど実物とはけっこう違って、写真の方が盛れてた。あと在籍長いのに口コミが少なかったのが不思議だった。総合的には満足。</textarea>
+    <button class="btn btn-primary" style="width:100%;margin-top:12px">構造化する</button>
+  </div>
+
+  <h2 class="sec">LLMが読み取った内容 <span class="muted" style="font-weight:400">（確認して修正できます）</span></h2>
+
+  <div class="card">
+    <div class="grid2" style="margin-bottom:12px">
+      <div><span class="label">店名</span><input class="input" value="川崎（店名不明）"></div>
+      <div><span class="label">源氏名</span><input class="input" value="まりん"></div>
+    </div>
+    <span class="label">プロフィールの特徴として述べられている点</span>
+    <div class="row" style="gap:6px;margin-bottom:14px">
+      <span class="chip">名器アピールあり</span><span class="chip">写真5枚</span><span class="chip">在籍長い</span><span class="chip">口コミ少ない</span>
+    </div>
+    <div class="grid2">
+      <div><span class="label">総合満足度</span><div class="stars" style="font-size:18px">★★★★☆</div></div>
+      <div><span class="label">サービス</span><div class="stars" style="font-size:18px">★★★★★</div></div>
+      <div><span class="label">写真との一致</span><div class="stars" style="font-size:18px">★★☆☆☆</div></div>
+      <div><span class="label">接客態度</span><div class="stars" style="font-size:18px;color:var(--muted)">記述なし</div></div>
+    </div>
+  </div>
+
+  <div class="card">
+    <h2 style="margin:0 0 5px;font-size:15px;font-weight:700;color:var(--text)">学習データに変換された対応</h2>
+    <p class="sm muted" style="margin:0 0 12px">記述から読み取れたものだけです。書いていないことは補完していません。</p>
+    <table>
+      <tr><th>辞書項目</th><th>結果</th><th>根拠</th></tr>
+      <tr><td>meiki_claim</td><td><span style="color:var(--good)">外れ</span></td><td class="muted">名器表記があったがサービスは丁寧だった</td></tr>
+      <tr><td>photo_rich</td><td><span style="color:var(--bad)">的中</span></td><td class="muted">写真は多いが実物と乖離していた</td></tr>
+      <tr><td>few_reviews</td><td class="muted">記録せず</td><td class="muted">少ないという事実のみで、結果との対応が不明</td></tr>
+    </table>
+    <div class="row" style="justify-content:space-between;margin-top:14px">
+      <span class="chip">記憶の確からしさ 0.6</span>
+      <span class="chip dash">学習の重み ×0.5（記憶ベース）</span>
+    </div>
+    <button class="btn btn-primary" style="width:100%;margin-top:12px">この内容で登録</button>
+  </div>
+</section>
+
+<!-- ================================================== ⑦ 辞書 -->
+<section class="screen" id="s7">
+  <p class="note">辞書の一覧と、育ってきた的中率。実績が積まれた項目ほど数字が信用でき、0件のものは「未検証」と明示されます。</p>
+
+  <header class="app">
+    <span class="brand">お姉さん投資判定</span>
+    <nav><span>判定</span><span>履歴</span><span>過去登録</span><span class="cur">辞書</span></nav>
+  </header>
+
+  <div class="catbar">
+    <span class="chip" style="border-color:var(--accent);color:var(--accent)">すべて 30</span>
+    <span class="chip">過剰主張 4</span>
+    <span class="chip">婉曲 6</span>
+    <span class="chip">欠落 7</span>
+    <span class="chip">需給 4</span>
+    <span class="chip">文体 3</span>
+    <span class="chip">信頼シグナル 6</span>
+  </div>
+
+  <details class="lex" open>
+    <summary><span>できないことを明記している <span class="chip good" style="margin-left:6px">信頼シグナル</span></span><span class="rate">的中 83% ・ 12件</span></summary>
+    <div class="inner">
+      <p style="margin:0 0 8px"><b>疑い:</b> 疑いではなく正のシグナル。売り手が自分に不利な情報を自発的に開示している。
+        機会損失を承知で書いている以上、他の記述の信頼度も連動して上がる。</p>
+      <p style="margin:0 0 8px"><b>見るべき点:</b> 同じ店の他の在籍嬢にも同一文言がないか。あれば店の定型文であり本人の意思ではない。</p>
+      <p style="margin:0" class="muted">検出: 「苦手なので」「ご遠慮ください」「対応していません」「NGです」など + 具体的な行為名</p>
+      <div class="row" style="margin-top:10px"><span class="chip">実績 的中10 / 外れ2</span><span class="chip">信用区間 61〜94%</span></div>
+    </div>
+  </details>
+
+  <details class="lex">
+    <summary><span>名器・締まりアピール <span class="chip bad" style="margin-left:6px">過剰主張</span></span><span class="rate">的中 64% ・ 14件</span></summary>
+    <div class="inner">
+      <p style="margin:0 0 8px"><b>疑い:</b> 客が事前検証できない主張であり、訴求材料が乏しいときの穴埋めとして使われやすい。</p>
+      <p style="margin:0" class="muted">検出: 「名器」「締まり」「具合」など</p>
+      <div class="row" style="margin-top:10px"><span class="chip">実績 的中9 / 外れ5</span><span class="chip">信用区間 38〜85%</span></div>
+    </div>
+  </details>
+
+  <details class="lex">
+    <summary><span>素人感・未経験アピール <span class="chip bad" style="margin-left:6px">婉曲・言い換え</span></span><span class="rate">的中 63% ・ 8件</span></summary>
+    <div class="inner">
+      <p style="margin:0 0 8px"><b>疑い:</b> 未経験は事実だとしても技術面の期待値を下げる材料であり、それを長所として売るのは
+        他に売る材料がないことの裏返しである可能性。在籍月数と矛盾していないかを必ず見る。</p>
+      <p style="margin:0" class="muted">検出: 「未経験」「素人」「初めて」「まだ慣れて」など</p>
+      <div class="row" style="margin-top:10px"><span class="chip">実績 的中5 / 外れ3</span><span class="chip">信用区間 31〜88%</span></div>
+    </div>
+  </details>
+
+  <details class="lex">
+    <summary><span>口コミが極端に少ない <span class="chip bad" style="margin-left:6px">欠落</span></span><span class="rate">未検証 ・ 初期値 55%</span></summary>
+    <div class="inner">
+      <p style="margin:0 0 8px"><b>疑い:</b> 在籍期間に対して口コミが少ないのは、リピートされていないか指名が入っていないことの示唆。</p>
+      <p style="margin:0 8px 8px 0" class="muted">検出: 口コミ件数 ≦ 5 かつ 在籍月数 ≧ 6</p>
+      <p style="margin:0;color:var(--warn)">実績0件です。この数字は辞書に書いた初期値であり、鵜呑みにしないでください。</p>
+    </div>
+  </details>
+
+  <details class="lex">
+    <summary><span>残枠アピール <span class="chip bad" style="margin-left:6px">需給シグナル</span></span><span class="rate">的中 69% ・ 9件</span></summary>
+    <div class="inner">
+      <p style="margin:0 0 8px"><b>疑い:</b> 常設の残枠表示は在庫希少性の演出。割引と同居している場合は特に需給の説明として矛盾する。</p>
+      <p style="margin:0" class="muted">検出: 「ラスト」「残り◯枠」「本日限り」など</p>
+      <div class="row" style="margin-top:10px"><span class="chip">実績 的中6 / 外れ3</span><span class="chip">信用区間 39〜90%</span></div>
+    </div>
+  </details>
+
+  <div class="card" style="margin-top:14px">
+    <p class="sm muted" style="margin:0">
+      辞書は <code style="color:var(--accent)">src/lib/lexicon/lexicon.yaml</code> を直接編集して増やせます。
+      的中率は登楼実績から自動で再計算されるので、誤入力は実績を消せば巻き戻ります。
+    </p>
+  </div>
+</section>
+
+</div>
+<script>
+  const tabs = document.getElementById('tabs');
+  tabs.addEventListener('click', e => {
+    const b = e.target.closest('button'); if (!b) return;
+    [...tabs.children].forEach(x => x.setAttribute('aria-selected', x === b));
+    document.querySelectorAll('.screen').forEach(s => s.classList.toggle('on', s.id === b.dataset.t));
+    window.scrollTo(0, 0);
+  });
+</script>
+</body>
+</html>
