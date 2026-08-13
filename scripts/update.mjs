@@ -150,8 +150,10 @@ async function main() {
     const to = path.join(ROOT, name);
 
     if (SELF.has(name)) {
+      // まだ無いなら、実行中のものではないので普通に置いてよい。
+      if (!fs.existsSync(to)) fs.copyFileSync(from, to);
       // 中身が同じなら書く必要が無い。違うときだけ隣に置いて知らせる。
-      if (sha(from) !== sha(to)) {
+      else if (sha(from) !== sha(to)) {
         fs.copyFileSync(from, `${to}.new`);
         pending.push(name);
       }
