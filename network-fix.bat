@@ -33,7 +33,19 @@ if errorlevel 1 (
   exit /b 1
 )
 
+rem Find the real node.exe. Answering "Cancel" to the Windows Defender
+rem prompt creates BLOCK rules for it, and block beats allow, so those
+rem have to go before any allow rule can take effect.
+set "NODEEXE="
+for /f "delims=" %%i in ('where node 2^>nul') do if not defined NODEEXE set "NODEEXE=%%i"
+
 echo.
+if defined NODEEXE (
+  echo   Clearing old rules for %NODEEXE%
+  netsh advfirewall firewall delete rule name=all dir=in program="%NODEEXE%" >nul 2>nul
+  netsh advfirewall firewall add rule name="Oneesan (Node.js)" dir=in action=allow program="%NODEEXE%" enable=yes profile=private,domain >nul
+)
+
 echo   Allowing inbound TCP 3000 for private networks...
 
 netsh advfirewall firewall delete rule name="Oneesan (port 3000)" >nul 2>nul

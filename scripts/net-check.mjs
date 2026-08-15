@@ -55,12 +55,8 @@ function hasFirewallRule() {
   return String(all.stdout ?? "").includes("Oneesan");
 }
 
-/**
- * ネットワークの種類。
- * 「パブリック」だと、家庭内向けの許可が効かず外から一切繋がらない。
- */
-function networkCategories() {
-  if (!win) return [];
+/** PowerShell を1行実行して、標準出力を返す。取れなければ空。 */
+function powershell(command) {
   const r = spawnSync(
     "powershell",
     [
@@ -68,13 +64,42 @@ function networkCategories() {
       "-NonInteractive",
       "-Command",
       // 日本語のインターフェイス名が文字化けしないよう、出力を UTF-8 に揃える
-      "[Console]::OutputEncoding=[Text.Encoding]::UTF8; " +
-        "Get-NetConnectionProfile | ForEach-Object { $_.InterfaceAlias + '=' + $_.NetworkCategory }",
+      `[Console]::OutputEncoding=[Text.Encoding]::UTF8; ${command}`,
     ],
     { encoding: "utf8" },
   );
-  if (r.status !== 0) return [];
-  return String(r.stdout)
+  return r.status === 0 ? String(r.stdout ?? "") : "";
+}
+
+/**
+ * node.exe を名指しで拒否している規則の数。
+ *
+ * 「このアプリのアクセスを許可しますか」でキャンセルを押すと、Windows は
+ * 許可ではなく**拒否の規則**を作る。拒否は許可より優先されるので、
+ * ポートを開けただけでは直らない。ここが原因のことが多い。
+ */
+function blockedRuleCount() {
+  if (!win) return null;
+  const exe = process.execPath.replace(/'/g, "''");
+  const out = powershell(
+    `@(Get-NetFirewallApplicationFilter -Program '${exe}' -ErrorAction SilentlyContinue | ` +
+      `Get-NetFirewallRule -ErrorAction SilentlyContinue | ` +
+      `Where-Object { $_.Direction -eq 'Inbound' -and $_.Action -eq 'Block' -and $_.Enabled -eq 'True' }).Count`,
+  );
+  const n = Number(out.trim());
+  return Number.isFinite(n) ? n : null;
+}
+
+/**
+ * ネットワークの種類。
+ * 「パブリック」だと、家庭内向けの許可が効かず外から一切繋がらない。
+ */
+function networkCategories() {
+  if (!win) return [];
+  const out = powershell(
+    "Get-NetConnectionProfile | ForEach-Object { $_.InterfaceAlias + '=' + $_.NetworkCategory }",
+  );
+  return out
     .split(/\r?\n/)
     .map((s) => s.trim())
     .filter(Boolean)
@@ -104,12 +129,17 @@ async function main() {
     return;
   }
 
-  // 2. 防火壁
+  // 2. node.exe が名指しで拒否されていないか（許可の有無より優先度が高い）
+  const blocked = blockedRuleCount();
+  if (blocked) line(`  [NG]  防火壁が Node.js を拒否しています（${blocked}件）`);
+  else if (blocked === 0) line("  [OK]  防火壁は Node.js を拒否していません");
+
+  // 3. 防火壁の許可
   const rule = hasFirewallRule();
   if (rule === true) line("  [OK]  防火壁に許可が入っています");
   else if (rule === false) line("  [NG]  防火壁に許可がありません");
 
-  // 3. ネットワークの種類
+  // 4. ネットワークの種類
   const cats = networkCategories();
   const publicOnes = cats.filter((c) => c.category === "Public");
   if (cats.length) {
@@ -119,6 +149,9 @@ async function main() {
       line("  [--]  一部のネットワークが「パブリック」です");
     } else {
       line("  [OK]  ネットワークの種類は「プライベート」です");
+    }
+    for (const c of cats) {
+      line(`          ${c.name}: ${c.category === "Public" ? "パブリック" : "プライベート"}`);
     }
   }
 
@@ -134,24 +167,34 @@ async function main() {
   }
 
   // 直せるものが残っていれば、それを最優先で出す
-  if (rule === false || publicOnes.length) {
+  if (rule === false || blocked || publicOnes.length) {
+    let step = 0;
     line("");
     line("  やること");
     if (publicOnes.length) {
       line("");
-      line("   1) ネットワークを「プライベート」に変える");
-      line("      設定 → ネットワークとインターネット → イーサネット");
-      line("      →「ネットワーク プロファイルの種類」を");
-      line("        「プライベート ネットワーク」に変更");
-      for (const c of publicOnes) line(`        （対象: ${c.name}）`);
+      line(`   ${++step}) ネットワークを「プライベート」に変える`);
+      line("      設定 → ネットワークとインターネット → 下の対象を開き、");
+      line("      「ネットワーク プロファイルの種類」を");
+      line("      「プライベート ネットワーク」に変更");
+      for (const c of publicOnes) line(`        対象: ${c.name}`);
       line("");
       line("      家のネットワークなら、これが正しい設定です。");
       line("      パブリックは「外のフリー Wi-Fi 用」の意味です。");
     }
-    if (rule === false) {
+    if (rule === false || blocked) {
       line("");
-      line(`   ${publicOnes.length ? "2" : "1"}) network-fix.bat を右クリック →「管理者として実行」`);
-      line("      ポート 3000 への接続を許可します。");
+      line(`   ${++step}) network-fix.bat を右クリック →「管理者として実行」`);
+      if (blocked) {
+        line("      Node.js を拒否している設定を取り消してから、");
+        line("      ポート 3000 への接続を許可します。");
+        line("");
+        line("      「アクセスを許可しますか」の問いでキャンセルを押すと、");
+        line("      Windows は拒否として覚えます。拒否は許可より強いので、");
+        line("      ポートを開けるだけでは直りません。");
+      } else {
+        line("      ポート 3000 への接続を許可します。");
+      }
     }
   } else {
     line("");
@@ -172,6 +215,16 @@ async function main() {
     line("");
     line("   3) スマホの VPN を切る");
     line("      通信が家の外へ回されて、PC に届きません。");
+
+    if (addresses().some((a) => a.vpn)) {
+      line("");
+      line("   4) VPN 用の住所を試すなら");
+      line("      スマホ側にも同じ VPN（Tailscale など）が入っていて、");
+      line("      同じアカウントで接続中である必要があります。");
+      for (const a of addresses().filter((x) => x.vpn)) {
+        line(`      http://${a.address}:${PORT}   [${a.name}]`);
+      }
+    }
   }
 
   line("");
