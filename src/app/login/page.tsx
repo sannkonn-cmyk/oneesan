@@ -1,5 +1,6 @@
 import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
+import { buildInfo } from "@/lib/build-info";
 import { AUTH_COOKIE, hashPassword } from "@/middleware";
 
 /**
@@ -15,6 +16,7 @@ export default async function Page({
   searchParams: Promise<{ e?: string }>;
 }) {
   const failed = (await searchParams).e === "1";
+  const build = buildInfo();
 
   async function login(formData: FormData) {
     "use server";
@@ -49,6 +51,9 @@ export default async function Page({
         <a href="/health" className="underline">
           接続診断
         </a>
+      </p>
+      <p className="hint text-center">
+        版 {build.at} <span className="num">{build.id}</span>
       </p>
     </form>
   );

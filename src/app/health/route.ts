@@ -1,5 +1,6 @@
 import fs from "node:fs";
 import path from "node:path";
+import { buildInfo } from "@/lib/build-info";
 
 /**
  * 自己診断ページ。
@@ -40,6 +41,7 @@ const esc = (s: string) =>
 export async function GET(req: Request) {
   const urls = assetUrls();
   const host = req.headers.get("host") ?? "";
+  const build = buildInfo();
 
   const html = `<!doctype html>
 <html lang="ja">
@@ -80,7 +82,9 @@ export async function GET(req: Request) {
 <div id="cssprobe" style="display:none">css probe</div>
 
 <div class="box">
-  <div class="k">接続先</div>
+  <div class="k">動いている版</div>
+  <div style="font-size:13px">${esc(build.at)} <span style="color:#94a3b8">${esc(build.id)}</span></div>
+  <div class="k" style="margin-top:8px">接続先</div>
   <div style="font-size:13px">${esc(host)}</div>
   <div class="k" style="margin-top:8px">この端末</div>
   <div style="font-size:12px;color:#94a3b8" id="ua"></div>
@@ -92,7 +96,9 @@ export async function GET(req: Request) {
 (function () {
   var nextUrls = ${JSON.stringify(urls)};
   var list = document.getElementById("list");
-  var total = 0, done = 0, badNext = 0, badOwn = 0;
+  var total = 0, done = 0;
+  // どこで落ちたかを分けて数える。原因の切り分けがこれで決まる。
+  var badSmall = 0, badBig = 0, badNext = 0;
 
   document.getElementById("ua").textContent = navigator.userAgent;
 
@@ -109,10 +115,14 @@ export async function GET(req: Request) {
     el.appendChild(st);
     list.appendChild(el);
     total++;
-    return function (ok, text, isNext) {
+    return function (ok, text, kind) {
       st.className = "s " + (ok ? "ok" : "ng");
       st.textContent = text;
-      if (!ok) { if (isNext) badNext++; else badOwn++; }
+      if (!ok) {
+        if (kind === "next") badNext++;
+        else if (kind === "big") badBig++;
+        else badSmall++;
+      }
       if (++done === total) finish();
     };
   }
@@ -120,24 +130,32 @@ export async function GET(req: Request) {
   function finish() {
     var v = document.getElementById("verdict");
     var a = document.getElementById("advice");
-    if (badNext === 0 && badOwn === 0) {
-      v.className = "ok";
-      v.textContent = "異常なし";
-      a.textContent = "ファイルは全て届いています。画面がまだ崩れている場合は、"
-        + "ブラウザで引っぱって更新してください。古い状態が残っているだけです。";
-    } else if (badNext > 0 && badOwn === 0) {
-      v.className = "ng";
+    v.className = "ng";
+
+    if (badSmall) {
+      // 小さいものすら来ない。通信そのものが止められている。
+      v.textContent = "ファイルが届いていません";
+      a.textContent = "画面が崩れる・ボタンが効かない直接の原因です。"
+        + "PC 側で network-fix.bat を管理者として実行してください。"
+        + "直らなければ、この画面を撮って送ってください。";
+    } else if (badBig) {
+      // 小さいものは来るのに大きいものが落ちる。通信路の問題。
+      v.textContent = "大きいファイルだけ落ちています";
+      a.textContent = "防火壁ではありません。中継機（Wi-Fi 中継器・メッシュ）を"
+        + "経由していませんか。ルーターに直接つなぐと直ることがあります。"
+        + "この画面を撮って送ってください。";
+    } else if (badNext) {
+      // 自前のものは同じ大きさでも通る。置き場を狙って止められている。
       v.textContent = "見た目と動きのファイルだけが止められています";
       a.textContent = "通信そのものは通っているので、防火壁より先の問題です。"
         + "PC の保護ソフト（ウイルス対策）の Web 保護、または"
         + "スマホ側の広告ブロック・フィルタが疑わしいです。"
         + "この画面を撮って送ってください。";
     } else {
-      v.className = "ng";
-      v.textContent = "ファイルが届いていません";
-      a.textContent = "画面が崩れる・ボタンが効かない直接の原因です。"
-        + "PC 側で network-fix.bat を管理者として実行してください。"
-        + "直らなければ、この画面を撮って送ってください。";
+      v.className = "ok";
+      v.textContent = "異常なし";
+      a.textContent = "ファイルは全て届いています。画面がまだ崩れている場合は、"
+        + "ブラウザで引っぱって更新してください。古い状態が残っているだけです。";
     }
   }
 
@@ -150,9 +168,9 @@ export async function GET(req: Request) {
   l.onload = function () {
     var c = getComputedStyle(document.getElementById("cssprobe")).color;
     var hit = c.replace(/\\s/g, "") === "rgb(0,200,0)";
-    doneCss(hit, hit ? "効いた" : "効かない", false);
+    doneCss(hit, hit ? "効いた" : "効かない", "small");
   };
-  l.onerror = function () { doneCss(false, "届かない", false); };
+  l.onerror = function () { doneCss(false, "届かない", "small"); };
   document.head.appendChild(l);
 
   // 2. このアプリ自身が配る JS。script タグで実際に実行させる。
@@ -161,25 +179,37 @@ export async function GET(req: Request) {
   s.src = "/health/probe.js?t=" + Date.now();
   s.onload = function () {
     var hit = window.__oneesanProbe === true;
-    doneJs(hit, hit ? "動いた" : "動かない", false);
+    doneJs(hit, hit ? "動いた" : "動かない", "small");
   };
-  s.onerror = function () { doneJs(false, "届かない", false); };
+  s.onerror = function () { doneJs(false, "届かない", "small"); };
   document.head.appendChild(s);
 
-  // 3. 本物の資産。ここだけ落ちるなら、置き場を狙って止められている。
+  function why(e) {
+    var m = String((e && e.message) || e);
+    // ブラウザの文言は英語で出るので、よくあるものは日本語にする
+    return /fetch|network|load failed/i.test(m) ? "届かない" : m.slice(0, 24);
+  }
+
+  // 3. 大きいファイル。小さいものとの差で、通信路の問題かどうかを見る。
+  var doneBig = row("このアプリの大きいファイル（256KB）");
+  fetch("/health/probe.css?big=1&t=" + Date.now(), { cache: "no-store" })
+    .then(function (r) { return r.ok ? r.text() : Promise.reject(new Error("HTTP " + r.status)); })
+    .then(function (t) {
+      var kb = Math.round(t.length / 1024);
+      doneBig(kb >= 200, kb >= 200 ? "届いた" : "途中で切れた " + kb + "KB", "big");
+    })
+    .catch(function (e) { doneBig(false, why(e), "big"); });
+
+  // 4. 本物の資産。ここだけ落ちるなら、置き場を狙って止められている。
   if (!nextUrls.length) {
-    row("組み立て結果")(false, "見つからない", true);
+    row("組み立て結果")(false, "見つからない", "next");
   }
   nextUrls.forEach(function (u) {
     var d = row(u);
     // キャッシュ済みの結果ではなく、いま届くかを見たい
     fetch(u + "?t=" + Date.now(), { cache: "no-store" })
-      .then(function (r) { d(r.ok, r.ok ? "届いた" : "HTTP " + r.status, true); })
-      .catch(function (e) {
-        var m = String((e && e.message) || e);
-        // ブラウザの文言は英語で出るので、よくあるものは日本語にする
-        d(false, /fetch|network/i.test(m) ? "届かない" : m.slice(0, 24), true);
-      });
+      .then(function (r) { d(r.ok, r.ok ? "届いた" : "HTTP " + r.status, "next"); })
+      .catch(function (e) { d(false, why(e), "next"); });
   });
 })();
 </script>
