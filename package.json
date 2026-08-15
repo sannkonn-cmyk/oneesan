@@ -10,6 +10,7 @@
     "start": "next start -H 0.0.0.0",
     "lint": "next lint",
     "typecheck": "tsc --noEmit",
+    "net:check": "node scripts/net-check.mjs",
     "test:lexicon": "tsx scripts/test-lexicon.ts",
     "test:llm": "tsx scripts/test-llm.ts",
     "test:e2e": "tsx scripts/test-e2e.ts",
