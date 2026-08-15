@@ -12,7 +12,9 @@ export async function POST(req: NextRequest) {
   const res = NextResponse.json({ ok: true });
   res.cookies.set(AUTH_COOKIE, await hashPassword(pw), {
     httpOnly: true,
-    sameSite: "strict",
+    // strict だと、他のアプリからリンクを踏んで開いたときにクッキーが送られず、
+    // 毎回ログインし直しになる。ホーム画面から開く使い方で困る。
+    sameSite: "lax",
     path: "/",
     maxAge: 60 * 60 * 24 * 90,
   });

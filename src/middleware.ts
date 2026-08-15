@@ -20,7 +20,11 @@ export async function middleware(req: NextRequest) {
   if (!pw) return NextResponse.next();
 
   const { pathname } = req.nextUrl;
-  if (pathname === "/login" || pathname === "/api/login") return NextResponse.next();
+  // /health は接続診断。ログインできない状態でも開けなければ意味が無い。
+  // 個人データは一切出さない作りにしてある。
+  if (pathname === "/login" || pathname === "/api/login" || pathname.startsWith("/health")) {
+    return NextResponse.next();
+  }
 
   const token = req.cookies.get(AUTH_COOKIE)?.value;
   if (token && token === (await hashPassword(pw))) return NextResponse.next();
