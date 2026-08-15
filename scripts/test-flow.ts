@@ -76,6 +76,57 @@ function request(
   });
 }
 
+/**
+ * サーバーアクションのフォームを、ブラウザと同じ形（multipart）で送る。
+ * 設定画面は JavaScript を使わない素の form なので、こちらも素で送らないと
+ * 「利用者と同じ経路を通す」というこのテストの意味が無くなる。
+ */
+function postForm(pathname: string, fields: [string, string][]): Promise<{ status: number; text: string }> {
+  const boundary = "----oneesan" + Math.random().toString(16).slice(2);
+  const body =
+    fields
+      .map(([k, v]) => `--${boundary}\r\nContent-Disposition: form-data; name="${k}"\r\n\r\n${v}\r\n`)
+      .join("") + `--${boundary}--\r\n`;
+
+  return new Promise((resolve, reject) => {
+    const url = new URL(BASE + pathname);
+    const req = http.request(
+      {
+        hostname: url.hostname,
+        port: url.port || 80,
+        path: url.pathname + url.search,
+        method: "POST",
+        headers: {
+          "content-type": `multipart/form-data; boundary=${boundary}`,
+          "content-length": Buffer.byteLength(body),
+          ...(cookie ? { cookie } : {}),
+        },
+      },
+      (res) => {
+        let text = "";
+        res.setEncoding("utf8");
+        res.on("data", (d) => (text += d));
+        res.on("end", () => resolve({ status: res.statusCode ?? 0, text }));
+      },
+    );
+    req.on("error", reject);
+    req.setTimeout(60_000, () => req.destroy(new Error("フォーム送信が返りませんでした")));
+    req.write(body);
+    req.end();
+  });
+}
+
+/** 同じ画面に複数のフォームがあるので、目印の入力欄で見分ける。 */
+function actionIdFor(html: string, marker: string): string {
+  for (const chunk of html.split("<form").slice(1)) {
+    const form = chunk.slice(0, chunk.indexOf("</form>"));
+    if (!form.includes(`name="${marker}"`)) continue;
+    const id = form.match(/name="(\$ACTION_ID_[^"]+)"/)?.[1];
+    if (id) return id;
+  }
+  throw new Error(`${marker} を含むフォームが見つかりません`);
+}
+
 async function api(pathname: string, body?: unknown): Promise<{ status: number; json: any }> {
   const { status, text } = await request(body === undefined ? "GET" : "POST", pathname, body);
   let json: any = null;
@@ -102,11 +153,31 @@ async function pastCaseCount(): Promise<number> {
   return m ? Number(m[1]) : 0;
 }
 
+/**
+ * 電話の項目に印が付いているか。
+ * React は属性を書いた順に出さない（checked が value より前に来る）ので、
+ * input タグ全体を取り出してから見る。
+ */
+async function phoneChecked(): Promise<boolean> {
+  const html = (await getPage("/settings")).text;
+  const box = html.match(/<input[^>]*value="phone"[^>]*>/)?.[0] ?? "";
+  return box.includes("checked");
+}
+
 const PROFILE = `はじめまして、ゆいです♡
 業界最高峰のルックスって言われます！
 締まりが良い名器と評判なので確かめに来てくださいね♡
+VIPサービスもご案内できますので聞いてくださいね♡
 アナル舐めは苦手なのでごめんなさい。最近サウナにハマってます。
 本日ラスト1枠です、お急ぎください♡`;
+
+/**
+ * 用語の申し送りが効いているかを見るための言葉。本文には書かれていない。
+ * 画面の記入例にも似た文が出るので、一覧に載ったかどうかは目印で判定する。
+ */
+const MARK = "ZZ受入テストZZ";
+const GLOSSARY = `この店で「VIPサービス」と書いてあるのは中出しのこと ${MARK}`;
+const POLICY = `写メ日記の文体から本人が書いているかを見てほしい ${MARK}`;
 
 const PAST_CASE = `広島の店の ひよりさん。プロフィールは名器アピールが強めだったけど、
 実際は淫語もいちゃいちゃも上手くて当たりだった。写真も本人だった。満足度5。`;
@@ -126,7 +197,7 @@ async function main(): Promise<void> {
   }
 
   console.log("\n[2] 画面が開く");
-  for (const p of ["/", "/history", "/import", "/lexicon"]) {
+  for (const p of ["/", "/history", "/import", "/lexicon", "/settings", "/health"]) {
     const res = await getPage(p);
     check(`${p} が表示される`, res.status === 200, `HTTP ${res.status}`);
   }
@@ -154,7 +225,51 @@ async function main(): Promise<void> {
     }
   }
 
-  console.log("\n[4] 判定");
+  // 判定より先に設定する。判定結果に効いているかを [4] で見るため。
+  console.log("\n[4] AI への申し送り");
+  const addedInstructionIds: string[] = [];
+  {
+    const idsOf = (html: string) =>
+      [...html.matchAll(/name="id" value="(\d+)"/g)].map((m) => m[1]);
+
+    const before = idsOf((await getPage("/settings")).text);
+
+    for (const [kind, text] of [
+      ["glossary", GLOSSARY],
+      ["policy", POLICY],
+    ] as const) {
+      const page = (await getPage(`/settings?kind=${kind}`)).text;
+      const res = await postForm(`/settings?kind=${kind}`, [
+        ["kind", kind],
+        ["text", text],
+        [actionIdFor(page, "text"), ""],
+      ]);
+      check(`${kind} を追加できる`, res.status === 303 || res.status === 200, `HTTP ${res.status}`);
+    }
+
+    const after = (await getPage("/settings")).text;
+    addedInstructionIds.push(...idsOf(after).filter((i) => !before.includes(i)));
+    // 件数は削除ボタンの数で見る。本文の出現回数だと、画面に出ている分と
+    // React が埋め込む復元用のデータとで二重に数えてしまう。
+    check(
+      "用語と方針が一覧に出る",
+      addedInstructionIds.length === 2 && after.includes(MARK),
+      `増えた件数 ${addedInstructionIds.length}`,
+    );
+
+    // 電話を外し、外した手段が確認事項に出てこないことを [4] で見る
+    const chPage = (await getPage("/settings")).text;
+    const keep = ["diary", "review", "profile", "sns", "onsite"];
+    const res = await postForm("/settings", [
+      ...keep.map((c) => ["channel", c] as [string, string]),
+      [actionIdFor(chPage, "channel"), ""],
+    ]);
+    check("確認手段を保存できる", res.status === 303 || res.status === 200, `HTTP ${res.status}`);
+
+    check("電話のチェックが外れている", !(await phoneChecked()), "電話が有効なままになっている");
+  }
+
+  console.log("\n[5] 判定");
   let analysisId = 0;
   {
     const r = await api("/api/analyze", {
@@ -176,17 +291,36 @@ async function main(): Promise<void> {
       check("裏読みが返る", res.readings.length >= 3, `${res.readings.length}件`);
       check("確認事項が返る", res.verification_questions.length >= 3);
       check("信頼材料を拾えている", res.readings.some((x: any) => x.stance === "trust"));
+
+      // 用語の申し送りが効いていれば、本文に無い「中出し」の話が出てくるはず
+      const body = JSON.stringify(res);
+      check(
+        "登録した用語の意味で読んでいる",
+        body.includes("中出し"),
+        "VIPサービスを額面どおりに読んでいる可能性がある",
+      );
+
+      // 外した手段を前提にした確認事項が出ていないこと
+      const phone = res.verification_questions.filter((q: any) =>
+        String(q.question ?? q).includes("電話"),
+      );
+      check(
+        "外した手段（電話）の確認事項が無い",
+        phone.length === 0,
+        phone.map((q: any) => q.question ?? q).join(" / "),
+      );
+
       console.log(`       → 判定「${res.verdict}」 裏読み${res.readings.length}件`);
     }
   }
 
-  console.log("\n[5] 詳細画面");
+  console.log("\n[6] 詳細画面");
   if (analysisId) {
     const res = await getPage(`/analysis/${analysisId}`);
     check("詳細が表示される", res.status === 200, `HTTP ${res.status}`);
   }
 
-  console.log("\n[6] 再レビュー");
+  console.log("\n[7] 再レビュー");
   let rereviewId = 0;
   if (analysisId) {
     const r = await api("/api/rereview", {
@@ -210,7 +344,7 @@ async function main(): Promise<void> {
     }
   }
 
-  console.log("\n[7] 登楼実績の記録と学習");
+  console.log("\n[8] 登楼実績の記録と学習");
   if (analysisId) {
     const r = await api("/api/outcome", {
       analysis_id: analysisId,
@@ -230,7 +364,7 @@ async function main(): Promise<void> {
     }
   }
 
-  console.log("\n[8] 学習が辞書に反映されているか");
+  console.log("\n[9] 学習が辞書に反映されているか");
   {
     const html = (await getPage("/lexicon")).text;
     const verified = html.match(/実績\s*[\d.]+件/g) ?? [];
@@ -241,7 +375,7 @@ async function main(): Promise<void> {
     );
   }
 
-  console.log("\n[9] 過去登録の削除と、学習の巻き戻し");
+  console.log("\n[10] 過去登録の削除と、学習の巻き戻し");
   if (pastCaseId) {
     const before = (await getPage("/lexicon")).text;
     const beforeCount = (before.match(/実績\s*[\d.]+件/g) ?? []).length;
@@ -274,6 +408,29 @@ async function main(): Promise<void> {
       afterCount <= beforeCount,
       `削除前${beforeCount}項目 → 削除後${afterCount}項目`,
     );
+  }
+
+  // テストが利用者の設定を書き換えたままにしない。
+  console.log("\n[11] 申し送りの削除と、設定の復旧");
+  {
+    for (const id of addedInstructionIds) {
+      const page = (await getPage("/settings")).text;
+      await postForm("/settings", [
+        ["id", id],
+        [actionIdFor(page, "id"), ""],
+      ]);
+    }
+    const after = (await getPage("/settings")).text;
+    check("申し送りが一覧から消えている", !after.includes(MARK), "消したはずの記録が残っている");
+
+    const page = (await getPage("/settings")).text;
+    await postForm("/settings", [
+      ...["phone", "diary", "review", "profile", "sns", "onsite"].map(
+        (c) => ["channel", c] as [string, string],
+      ),
+      [actionIdFor(page, "channel"), ""],
+    ]);
+    check("確認手段が元に戻っている", await phoneChecked(), "電話が無効のままになっている");
   }
 
   console.log(failures === 0 ? "\n全て成功しました。\n" : `\n${failures} 件失敗しました。\n`);

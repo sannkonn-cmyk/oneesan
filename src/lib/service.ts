@@ -26,6 +26,7 @@ import {
   type ImportResult,
   type RereviewResult,
 } from "./schemas";
+import { getSettings } from "./settings";
 import { findSimilarCases } from "./similar";
 
 // ---------------------------------------------------------------- 保存の下請け
@@ -133,6 +134,7 @@ export async function runAnalyze(args: AnalyzeArgs): Promise<{ id: number; resul
     hits,
     stats,
     similar,
+    settings: getSettings(),
   });
 
   const llm = getLlm();
@@ -189,6 +191,7 @@ export async function runRereview(
     previous: prev.result,
     answers: args.answers,
     freeNote: args.freeNote ?? "",
+    settings: getSettings(),
   });
 
   const llm = getLlm();

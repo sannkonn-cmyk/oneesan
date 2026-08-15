@@ -84,6 +84,13 @@ export function VerificationPanel({
           検証価値の高い順です。
           {!readOnly && "結果を入れて「もう一度読み直す」を押すと、判定が更新されます。"}
         </p>
+        <p className="hint mb-1">
+          手段が偏っている・使えない手段が混じっているときは{" "}
+          <a href="/settings" className="underline">
+            設定
+          </a>{" "}
+          で変えられます。
+        </p>
 
         {items.map((item, idx) => {
           const a = answers[item.id];

@@ -2,6 +2,7 @@ import { CATEGORY_LABEL } from "./lexicon/types";
 import type { EntryStat, LexiconHit, ProfileMeta } from "./lexicon/types";
 import { pricePerHour } from "./meta";
 import type { AnalyzeResult } from "./schemas";
+import { VERIFY_CHANNELS, type Settings } from "./settings";
 
 // ---------------------------------------------------------------- 共通の役割定義
 
@@ -60,10 +61,16 @@ trust にしてください。信頼できる材料に無理やり疑いの体�
 ## 確認すべきことは「行動」で書く
 verification_questions は、利用者が登楼前に実行できる具体的な行動にしてください。
   悪い例: 「サービス内容を確認する」「写真が本物か確認する」
-  良い例: 「電話予約時に『マットは対応可能ですか』と聞き、即答かどうかを見る」
-        「写メ日記の直近2週間を開き、店長コメントと文体が違うかを見る」
+  良い例: 「写メ日記の直近2週間を開き、店長コメントと文体が違うかを見る」
         「口コミを在籍3ヶ月目より前の日付で検索し、評価が変わっていないか見る」
+        「同じ店の他の嬢のプロフィールを3人分開き、同じ言い回しが使われていないか見る」
+        「電話予約時に『マットは対応可能ですか』と聞き、即答かどうかを見る」
 最も検証価値の高いもの（判定が大きく動くもの）から順に、3〜6件挙げてください。
+
+**手段を散らしてください。** 同じ手段ばかりを並べると、一度の行動で分かることが
+偏り、確かめられる範囲が狭くなります。とくに「店に電話して聞く」は手軽に思いつく
+ぶん偏りやすいので、意識して他の手段を混ぜてください。3件以上出すときは、
+必ず2種類以上の手段にまたがらせてください。
 
 ## 点数の意味
   service_expectation : サービスへの期待度 0-100（高いほど良い）
@@ -169,12 +176,90 @@ function renderHitsCompact(hits: LexiconHit[], stats: Map<string, EntryStat>): s
     .join("\n");
 }
 
+/**
+ * 利用者からの申し送りを system プロンプトに載せる形にする。
+ *
+ * 用語と方針を**別の見出しに分ける**のが肝心。
+ * 用語（VIPサービス＝中出し、など）は利用者が実地で得た事実であって要望ではない。
+ * これを「尊重してください」と渡すと、AI が忖度の一種として扱い、読みの根拠に
+ * ならない。事実として渡してはじめて、確度の計算に効く。
+ */
+function renderPolicy(settings: Settings): string {
+  // 手段が空だと確認事項が一つも作れない。保存側でも防いでいるが、
+  // 組み立ての最後でも受け止めておく。ここが壊れると判定が丸ごと無意味になる。
+  const picked = VERIFY_CHANNELS.filter((c) => settings.channels.includes(c.id));
+  const channels = picked.length ? picked : VERIFY_CHANNELS;
+  const glossary = settings.instructions.filter((i) => i.kind === "glossary");
+  const policy = settings.instructions.filter((i) => i.kind === "policy");
+
+  const blocks: string[] = [];
+
+  const excluded = VERIFY_CHANNELS.filter((c) => !channels.includes(c));
+
+  blocks.push(`## 使う確認手段
+
+利用者が使う手段は次のとおりです。ここに複数ある以上、
+**特定の手段に偏らせないでください**。
+
+${channels.map((c) => `- ${c.label} — ${c.hint}`).join("\n")}${
+    excluded.length
+      ? `
+
+### 使わない手段
+
+次の手段は利用者が使いません。**これらを前提にした確認事項は一つも出さないで
+ください。**どれだけ有益な確認であっても、実行できないので価値がゼロです。
+
+${excluded.map((c) => `- ${c.label}`).join("\n")}`
+      : ""
+  }`);
+
+  if (glossary.length) {
+    blocks.push(`## この界隈での言い回し（利用者からの申し送り）
+
+本文に次の語が出てきたら、この意味として読んでください。額面どおりに受け取っては
+いけません。これは利用者が実際に足を運んで得た事実であり、要望ではありません。
+
+${glossary.map((g, i) => `${i + 1}. ${g.text}`).join("\n")}
+
+その語が何を指すか分かるのですから、**なぜその語をあえて選んだのか**まで読んで
+ください（言い換えて濁しているのか、店の建前なのか、本人の売りなのか）。
+言い換えの存在自体が、そのプロフィールの書き手についての情報です。`);
+  }
+
+  if (policy.length) {
+    blocks.push(`## 利用者からの指示
+
+${policy.map((p, i) => `${i + 1}. ${p.text}`).join("\n")}
+
+これらは出力の方針として尊重してください。ただし、事実に反する記述や、
+根拠のない断定はしないでください。`);
+  }
+
+  return `\n\n# この利用者の事情（必ず守ること）\n\n${blocks.join("\n\n")}`;
+}
+
+/** 確認結果の表示名。過去事例の表示と再レビューの入力で共有する。 */
+const STATUS_LABEL: Record<string, string> = {
+  confirmed: "確認できた（そのとおりだった）",
+  denied: "確認したが違った",
+  unknown: "確認したが分からなかった",
+  unchecked: "未確認",
+};
+
+export interface SimilarCheck {
+  question: string;
+  status: string;
+  note: string;
+}
+
 export interface SimilarCase {
   girlName: string;
   shopName: string;
   traits: string[];
   satisfaction: number;
   note: string;
+  checks: SimilarCheck[];
   source: "recall" | "logged";
 }
 
@@ -184,9 +269,21 @@ function renderSimilar(cases: SimilarCase[]): string {
     .map((c, i) => {
       const src = c.source === "recall" ? "記憶ベース・精度は粗い" : "実測";
       const sat = c.satisfaction > 0 ? `満足度 ${c.satisfaction}/5` : "満足度 不明";
+      // 過去に実際に確かめた結果は、この利用者にしか無い材料。
+      // 「何を確かめたら何が分かったか」が次の確認事項の作り方に効く。
+      const checks = c.checks.length
+        ? `\n   確認したこと:\n` +
+          c.checks
+            .map(
+              (v) =>
+                `     - ${v.question} → ${STATUS_LABEL[v.status] ?? v.status}` +
+                `${v.note ? `（${v.note}）` : ""}`,
+            )
+            .join("\n")
+        : "";
       return `${i + 1}. ${c.shopName || "店名不明"} / ${c.girlName || "名前不明"}（${src}、${sat}）
    プロフィールの特徴: ${c.traits.join("、") || "記録なし"}
-   所感: ${c.note || "なし"}`;
+   所感: ${c.note || "なし"}${checks}`;
     })
     .join("\n");
 
@@ -208,12 +305,13 @@ export interface AnalyzeInput {
   hits: LexiconHit[];
   stats: Map<string, EntryStat>;
   similar: SimilarCase[];
+  settings: Settings;
 }
 
 export function buildAnalyzePrompt(input: AnalyzeInput): { system: string; user: string } {
   const system = `${CORE_ROLE}
 
-${CORE_RULES}
+${CORE_RULES}${renderPolicy(input.settings)}
 
 出力は指定された JSON スキーマに従ってください。日本語で書いてください。`;
 
@@ -254,17 +352,10 @@ export interface RereviewInput extends AnalyzeInput {
   freeNote: string;
 }
 
-const STATUS_LABEL: Record<string, string> = {
-  confirmed: "確認できた（そのとおりだった）",
-  denied: "確認したが違った",
-  unknown: "確認したが分からなかった",
-  unchecked: "未確認",
-};
-
 export function buildRereviewPrompt(input: RereviewInput): { system: string; user: string } {
   const system = `${CORE_ROLE}
 
-${CORE_RULES}
+${CORE_RULES}${renderPolicy(input.settings)}
 
 # 今回は再レビューです
 

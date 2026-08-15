@@ -1,5 +1,29 @@
 import { getDb } from "./db";
-import type { SimilarCase } from "./prompts";
+import type { SimilarCase, SimilarCheck } from "./prompts";
+
+/** 過去事例1件あたりに載せる確認結果の上限。入力が膨らむと再レビューが遅くなる。 */
+const MAX_CHECKS = 3;
+const NOTE_MAX = 80;
+
+/**
+ * その事例で実際に確かめたことを拾う。
+ * 再レビューは系列（root_analysis_id）で枝分かれするので、系列全体から集める。
+ * 未確認の項目は「まだ何も分かっていない」ので材料にならず、落とす。
+ */
+function checksFor(rootId: number): SimilarCheck[] {
+  return getDb()
+    .prepare<[number, number], SimilarCheck>(
+      `SELECT v.question, v.status, COALESCE(v.note, '') AS note
+         FROM verification v
+         JOIN analysis a ON a.id = v.analysis_id
+        WHERE a.root_analysis_id = ?
+          AND v.status <> 'unchecked'
+        ORDER BY v.checked_at, v.id
+        LIMIT ?`,
+    )
+    .all(rootId, MAX_CHECKS)
+    .map((c) => ({ ...c, note: c.note.slice(0, NOTE_MAX) }));
+}
 
 interface PastCaseRow {
   id: number;
@@ -12,6 +36,7 @@ interface PastCaseRow {
 
 interface LoggedRow {
   id: number;
+  root_analysis_id: number | null;
   shop_name: string | null;
   girl_name: string | null;
   satisfaction: number | null;
@@ -66,6 +91,8 @@ export function findSimilarCases(
         traits,
         satisfaction: row.satisfaction ?? 0,
         note: row.note ?? "",
+        // 記憶で書いた分に確認記録は無い
+        checks: [],
         source: "recall",
       },
     });
@@ -74,7 +101,7 @@ export function findSimilarCases(
   // 2. 実測（このアプリで判定し、登楼実績まで入力済みのもの）
   const loggedRows = db
     .prepare<[], LoggedRow>(
-      `SELECT a.id, a.shop_name, a.girl_name, o.satisfaction, o.note,
+      `SELECT a.id, a.root_analysis_id, a.shop_name, a.girl_name, o.satisfaction, o.note,
               (SELECT group_concat(r.lexicon_id)
                  FROM reading r WHERE r.analysis_id = a.id) AS lexicon_ids
        FROM analysis a
@@ -96,6 +123,7 @@ export function findSimilarCases(
         traits: overlap,
         satisfaction: row.satisfaction ?? 0,
         note: row.note ?? "",
+        checks: checksFor(row.root_analysis_id ?? row.id),
         source: "logged",
       },
     });

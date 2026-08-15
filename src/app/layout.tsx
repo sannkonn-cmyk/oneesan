@@ -19,6 +19,7 @@ const NAV = [
   { href: "/history", label: "履歴" },
   { href: "/import", label: "過去登録" },
   { href: "/lexicon", label: "辞書" },
+  { href: "/settings", label: "設定" },
 ];
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
