@@ -148,10 +148,24 @@ export default async function Page({
         </a>
       </section>
 
-      <p className="hint">
-        PC の Claude Desktop からは、書き出さずに直接読ませることもできます。
-        <span className="num"> mcp-setup.bat</span> を実行してください（README 参照）。
-      </p>
+      <section className="card space-y-2">
+        <p className="label">Claude への渡し方</p>
+        <p className="hint">
+          <strong>スマホのアプリ</strong>
+          <br />
+          コピーして入力欄に貼り付ける。うまくいかなければ「ファイルで保存」して添付。
+        </p>
+        <p className="hint">
+          <strong>PC の Claude Desktop</strong>
+          <br />
+          コピーして入力欄に貼り付ける。または「ファイルで保存」して、
+          ダウンロードフォルダにできた <span className="num">.md</span> を
+          入力欄に<strong>ドラッグして落とす</strong>。
+        </p>
+        <p className="hint">
+          長い場合は「1人分」や「私の判断基準だけ」に分けて渡すと通ります。
+        </p>
+      </section>
 
       <Link href="/history" className="hint block text-center underline">
         履歴に戻る

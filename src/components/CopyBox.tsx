@@ -5,34 +5,60 @@ import { useRef, useState } from "react";
 /**
  * 書き出した Markdown を渡すための箱。
  *
- * **navigator.clipboard は使えない。** スマホから http://192.168.x.x で
- * 開いている限り「安全な文脈」ではないので、ブラウザが機能自体を出さない。
- * 共有 API（navigator.share）も同じ理由で使えない。
+ * **同じ画面でも、開き方によって使える手段が違う。**
+ *   PC から      http://localhost:3000  → 「安全な文脈」扱い。clipboard が使える
+ *   スマホから   http://192.168.x.x     → 安全な文脈ではない。clipboard は消される
+ * 共有 API（navigator.share）も後者では使えない。
  *
- * そこで古い document.execCommand("copy") を使う。非推奨だが http でも動く。
- * それも駄目な端末向けに、触ると全選択される textarea を必ず置いておく
- * （長押しメニューの「コピー」で取れる）。
+ * そこで3段構えにする。
+ *   1. navigator.clipboard        （PC で確実）
+ *   2. document.execCommand       （非推奨だが http でも動く）
+ *   3. 触ると全選択される textarea（どちらも駄目な端末向け。長押しでコピー）
+ *
+ * どの方式で成功したかは利用者に関係ないので、表示は変えない。
  */
 export function CopyBox({ text }: { text: string }) {
   const ref = useRef<HTMLTextAreaElement>(null);
   const [msg, setMsg] = useState("");
 
-  function copy() {
+  const ok = () => setMsg("コピーしました。Claude に貼り付けてください。");
+  const ng = () =>
+    setMsg(
+      "この端末ではボタンでコピーできません。下の枠を長押しして「コピー」を選んでください（すでに全選択されています）。",
+    );
+
+  function selectAll() {
     const el = ref.current;
     if (!el) return;
     el.focus();
     el.select();
-    let ok = false;
-    try {
-      ok = document.execCommand("copy");
-    } catch {
-      ok = false;
+  }
+
+  async function copy() {
+    // 1. まともな経路。PC（localhost）ならこれで通る。
+    if (navigator.clipboard?.writeText) {
+      try {
+        await navigator.clipboard.writeText(text);
+        ok();
+        return;
+      } catch {
+        // 権限を拒否された場合など。下の経路に落とす。
+      }
     }
-    setMsg(
-      ok
-        ? "コピーしました。Claude に貼り付けてください。"
-        : "この端末ではボタンでコピーできません。下の枠を長押しして「コピー」を選んでください（すでに全選択されています）。",
-    );
+
+    // 2. 古い経路。スマホの LAN 接続でも動く。
+    selectAll();
+    try {
+      if (document.execCommand("copy")) {
+        ok();
+        return;
+      }
+    } catch {
+      /* 3 に落とす */
+    }
+
+    // 3. 全選択だけはできているので、手でコピーしてもらう。
+    ng();
   }
 
   return (
@@ -51,7 +77,7 @@ export function CopyBox({ text }: { text: string }) {
         readOnly
         value={text}
         rows={14}
-        onFocus={(e) => e.currentTarget.select()}
+        onFocus={selectAll}
         className="input font-mono text-[11px] leading-relaxed"
       />
       <p className="hint">

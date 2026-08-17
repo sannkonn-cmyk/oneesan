@@ -196,13 +196,11 @@ async function main(): Promise<void> {
      */
     const home = fs.mkdtempSync(path.join(os.tmpdir(), "oneesan-mcp-"));
     const cfgDir = path.join(home, ".config", "Claude");
-    fs.mkdirSync(cfgDir, { recursive: true });
-    // 既に別のサーバーが登録されている状態を再現する
     const cfgFile = path.join(cfgDir, "claude_desktop_config.json");
-    fs.writeFileSync(
-      cfgFile,
-      JSON.stringify({ mcpServers: { other: { command: "echo" } }, keepMe: true }),
-    );
+
+    // 設定フォルダが一切無い状態から始める。利用者の手元で起きた状況がこれで、
+    // 以前はここで「入っていない」と判定して何も書かずに終わっていた。
+    check("最初は設定フォルダが無い", !fs.existsSync(cfgDir));
 
     const setup = spawnSync(process.execPath, [path.join(ROOT, "scripts", "mcp-setup.mjs")], {
       cwd: ROOT,
@@ -211,15 +209,12 @@ async function main(): Promise<void> {
     });
     check("登録スクリプトが完走する", setup.status === 0, String(setup.stderr ?? "").slice(0, 300));
     check("警告が出ていない", !String(setup.stderr ?? "").includes("DeprecationWarning"), setup.stderr ?? "");
+    check("フォルダが無くても設定を書く", fs.existsSync(cfgFile), "書かれていない");
+    check("書いた場所を画面に出す", String(setup.stdout ?? "").includes(cfgFile), setup.stdout ?? "");
 
     const cfg = JSON.parse(fs.readFileSync(cfgFile, "utf8")) as {
       mcpServers: Record<string, { command: string; args: string[]; env: Record<string, string> }>;
-      keepMe?: boolean;
     };
-    check("既にあった登録を残している", Boolean(cfg.mcpServers.other), Object.keys(cfg.mcpServers).join(","));
-    check("他の設定を残している", cfg.keepMe === true);
-    check("控えを作っている", fs.existsSync(`${cfgFile}.bak`));
-
     const spec = cfg.mcpServers.oneesan;
     check("自分の登録が入っている", Boolean(spec), Object.keys(cfg.mcpServers).join(","));
 
@@ -242,6 +237,28 @@ async function main(): Promise<void> {
           }) + "\n",
         timeout: 60_000,
       });
+      // 既に他のサーバーが登録されている状態でも壊さないこと。
+      // ここを壊すと Claude Desktop 自体が使えなくなる。
+      fs.writeFileSync(
+        cfgFile,
+        JSON.stringify({ mcpServers: { other: { command: "echo" } }, keepMe: true }),
+      );
+      const again = spawnSync(process.execPath, [path.join(ROOT, "scripts", "mcp-setup.mjs")], {
+        cwd: ROOT,
+        encoding: "utf8",
+        env: { ...process.env, HOME: home, USERPROFILE: home, CLAUDE_BIN: "/nonexistent-claude" },
+      });
+      check("2回目も完走する", again.status === 0, String(again.stderr ?? "").slice(0, 200));
+
+      const merged = JSON.parse(fs.readFileSync(cfgFile, "utf8")) as {
+        mcpServers: Record<string, unknown>;
+        keepMe?: boolean;
+      };
+      check("既にあった登録を残している", Boolean(merged.mcpServers.other), Object.keys(merged.mcpServers).join(","));
+      check("自分の登録も入っている", Boolean(merged.mcpServers.oneesan));
+      check("他の設定項目を残している", merged.keepMe === true);
+      check("控えを作っている", fs.existsSync(`${cfgFile}.bak`));
+
       check(
         "登録された指定で起動して応答する",
         String(r.stdout ?? "").includes('"serverInfo"'),

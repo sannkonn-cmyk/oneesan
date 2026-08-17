@@ -43,46 +43,42 @@ if (!fs.existsSync(DB_PATH)) {
 
 // ---------------------------------------------------------------- Claude Desktop
 
+/**
+ * **入っているかを判定しない。設定は常に書く。**
+ *
+ * 判定を誤ると「入っているのに登録されない」となり、利用者が自力で
+ * 気づけない。逆に入っていない環境に残るのはファイル1つで、害が無い。
+ * 損害の大きさが釣り合っていないので、判定に成否を委ねない。
+ * （実際、入っているのに「入っていない」と出た報告があった。）
+ */
 let desktopDone = false;
-let desktopMissing = false;
+const desktopFile = desktopConfigPath();
 {
-  const file = desktopConfigPath();
-  const dir = path.dirname(file);
-  const app = desktopInstalled();
+  const dir = path.dirname(desktopFile);
+  if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
 
-  if (!fs.existsSync(dir) && !app) {
-    desktopMissing = true;
-    say("Claude Desktop は入っていないようです。登録を省略します。");
-  } else {
-    // 入れた直後だと設定フォルダがまだ無い。こちらで作ってしまってよい。
-    if (!fs.existsSync(dir)) {
-      fs.mkdirSync(dir, { recursive: true });
-      say(`設定フォルダを作りました: ${dir}`);
+  let config = {};
+  if (fs.existsSync(desktopFile)) {
+    const raw = fs.readFileSync(desktopFile, "utf8");
+    try {
+      config = JSON.parse(raw);
+    } catch {
+      say("Claude Desktop の設定ファイルが読めない形でした。触らずに中止します。");
+      say(`手で直す場合の場所: ${desktopFile}`);
+      process.exit(1);
     }
-    let config = {};
-    if (fs.existsSync(file)) {
-      const raw = fs.readFileSync(file, "utf8");
-      try {
-        config = JSON.parse(raw);
-      } catch {
-        say("Claude Desktop の設定ファイルが読めない形でした。触らずに中止します。");
-        say(`手で直す場合の場所: ${file}`);
-        process.exit(1);
-      }
-      // 壊したときに戻せるようにする。上書きより控えのほうが大事。
-      const backup = `${file}.bak`;
-      fs.writeFileSync(backup, raw);
-      say(`控えを取りました: ${backup}`);
-    }
-
-    config.mcpServers = config.mcpServers ?? {};
-    const existed = Boolean(config.mcpServers[NAME]);
-    config.mcpServers[NAME] = serverSpec();
-
-    fs.writeFileSync(file, JSON.stringify(config, null, 2) + "\n");
-    say(existed ? "Claude Desktop の登録を更新しました。" : "Claude Desktop に登録しました。");
-    desktopDone = true;
+    // 壊したときに戻せるようにする。上書きより控えのほうが大事。
+    fs.writeFileSync(`${desktopFile}.bak`, raw);
+    say(`控えを取りました: ${desktopFile}.bak`);
   }
+
+  config.mcpServers = config.mcpServers ?? {};
+  config.mcpServers[NAME] = serverSpec();
+
+  fs.writeFileSync(desktopFile, JSON.stringify(config, null, 2) + "\n");
+  say("Claude Desktop 用の設定を書きました。");
+  say(`  ${desktopFile}`);
+  desktopDone = true;
 }
 
 // ---------------------------------------------------------------- Claude Code
@@ -151,51 +147,37 @@ const ASK = [
 say();
 say("=".repeat(46));
 say();
-
-if (!desktopDone && !codeDone) {
-  say("  どちらにも登録できませんでした。");
-  say();
-  say("  Claude Desktop を入れてから、もう一度このファイルを");
-  say("  実行してください。");
-  say("    https://claude.ai/download");
-} else {
-  if (desktopDone) {
-    say("  Claude Desktop に登録しました。");
-    say();
-    say("  Claude Desktop を、いったん終了してから開き直してください。");
-    say("  起動したままでは設定が読み込まれません。");
-    say();
-    say("  開き直したら、こう聞いてください。");
-    for (const l of ASK) say(l);
-  }
-
-  if (desktopMissing) {
-    // Claude Code だけ登録できた場合。何ができて何ができないかを分けて言う。
-    say("  Claude Desktop は入っていないので、登録できたのは");
-    say("  Claude Code（黒い画面）だけです。");
-    say();
-    say("  ● いま使えること");
-    say("      黒い画面で claude と打って始め、こう聞く。");
-    for (const l of ASK) say(l);
-    say();
-    say("  ● スマホの Claude アプリで使いたい場合");
-    say("      アプリ側からこの PC は見えないので、");
-    say("      画面の「履歴 → Claude に読ませる」から書き出して、");
-    say("      コピーか添付で渡してください。設定は要りません。");
-    say();
-    say("  ● PC の Claude Desktop で使いたい場合");
-    say("      入れてから、このファイルをもう一度実行してください。");
-    say("        https://claude.ai/download");
-  } else if (codeDone && !desktopDone) {
-    say("  Claude Code に登録しました。");
-    say();
-    say("  黒い画面で claude と打って始め、こう聞いてください。");
-    for (const l of ASK) say(l);
-  }
-
-  say();
-  say("  読み取り専用でつないでいるので、データが書き換わることはありません。");
-}
+say("  設定を書きました。");
 say();
+say("  Claude Desktop を、いったん終了してから開き直してください。");
+say("  起動したままでは設定が読み込まれません。");
+say("  × で閉じても常駐が残ることがあるので、");
+say("  画面右下の通知領域からも終了させてください。");
+say();
+say("  開き直したら、こう聞いてください。");
+for (const l of ASK) say(l);
+say();
+if (codeDone) {
+  say("  Claude Code（黒い画面）にも登録しました。");
+  say("  claude と打って始めれば、同じように聞けます。");
+  say();
+}
+say("  読み取り専用でつないでいるので、データが書き換わることはありません。");
+say();
+say("  ------------------------------------------");
+say();
+say("  ● 読み込まれない場合は、深追いしないでください。");
+say();
+say("    アプリの「履歴 → Claude に読ませる」から");
+say("    MD ファイルを書き出して、Claude Desktop の入力欄に");
+say("    貼り付けるか、保存した .md をドラッグして落とせば");
+say("    同じことができます。設定は一切要りません。");
+say();
+if (!desktopInstalled()) {
+  // 見つからなくても設定は書いてある。ここは参考情報にとどめる。
+  say("    なお、Claude Desktop の本体は見つけられませんでした。");
+  say("    設定は書いてあるので、入っていれば次の起動で読まれます。");
+  say();
+}
 say("=".repeat(46));
 say();
