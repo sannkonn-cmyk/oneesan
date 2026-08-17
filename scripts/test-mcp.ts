@@ -9,10 +9,26 @@
  * 「読み取り専用で開けているか」も必ず見る。ここが緩んでいると、
  * 外から学習データを壊せることになる。
  */
-import { spawn } from "node:child_process";
+import { spawn, spawnSync } from "node:child_process";
+import fs from "node:fs";
+import os from "node:os";
 import path from "node:path";
 
+// 登録に使うものをそのまま使う。ここを別に書くと「登録はできたのに
+// 起動しない」を検査が見逃す。実際に一度見逃した。
+// @ts-expect-error 型定義の無い .mjs を意図的に読んでいる（登録側と同一の実体を使うため）
+import { serverSpec } from "./mcp-spec.mjs";
+
 const ROOT = process.cwd();
+const SPEC = serverSpec() as { command: string; args: string[]; env: Record<string, string> };
+
+/**
+ * **わざと無関係なフォルダから起動する。**
+ * Claude Desktop も Claude Code も、このフォルダとは違う場所から
+ * サーバーを起動する。ここを揃えてしまうと、パスの解決漏れを見逃す
+ * （`--import tsx` が作業フォルダ基準で解決されて落ちた件がこれ）。
+ */
+const FOREIGN_CWD = os.tmpdir();
 let failures = 0;
 
 function check(name: string, cond: boolean, detail = ""): void {
@@ -33,11 +49,11 @@ interface Rpc {
 /** 起動して、決まった順に問い合わせ、返ってきたものを集める。 */
 function talk(requests: object[]): Promise<Rpc[]> {
   return new Promise((resolve, reject) => {
-    const child = spawn(
-      process.execPath,
-      ["--import", "tsx", path.join(ROOT, "scripts", "mcp-server.ts")],
-      { cwd: ROOT, stdio: ["pipe", "pipe", "pipe"] },
-    );
+    const child = spawn(SPEC.command, SPEC.args, {
+      cwd: FOREIGN_CWD,
+      stdio: ["pipe", "pipe", "pipe"],
+      env: { ...process.env, ...SPEC.env },
+    });
 
     const got: Rpc[] = [];
     let buf = "";
@@ -169,6 +185,71 @@ async function main(): Promise<void> {
     }
     db.close();
     check("読み取り専用の接続では書き込みが失敗する", blocked, message || "書き込めてしまった");
+  }
+
+  console.log("\n[5] 登録内容がそのまま起動できること");
+  {
+    /**
+     * mcp-setup を偽のホームで走らせ、**書き込まれた設定を読み返して
+     * その通りに起動する。** 「登録はできたのに起動しない」が一番痛い
+     * 失敗の仕方で、しかも利用者の手元でしか起きない。
+     */
+    const home = fs.mkdtempSync(path.join(os.tmpdir(), "oneesan-mcp-"));
+    const cfgDir = path.join(home, ".config", "Claude");
+    fs.mkdirSync(cfgDir, { recursive: true });
+    // 既に別のサーバーが登録されている状態を再現する
+    const cfgFile = path.join(cfgDir, "claude_desktop_config.json");
+    fs.writeFileSync(
+      cfgFile,
+      JSON.stringify({ mcpServers: { other: { command: "echo" } }, keepMe: true }),
+    );
+
+    const setup = spawnSync(process.execPath, [path.join(ROOT, "scripts", "mcp-setup.mjs")], {
+      cwd: ROOT,
+      encoding: "utf8",
+      env: { ...process.env, HOME: home, USERPROFILE: home, CLAUDE_BIN: "/nonexistent-claude" },
+    });
+    check("登録スクリプトが完走する", setup.status === 0, String(setup.stderr ?? "").slice(0, 300));
+    check("警告が出ていない", !String(setup.stderr ?? "").includes("DeprecationWarning"), setup.stderr ?? "");
+
+    const cfg = JSON.parse(fs.readFileSync(cfgFile, "utf8")) as {
+      mcpServers: Record<string, { command: string; args: string[]; env: Record<string, string> }>;
+      keepMe?: boolean;
+    };
+    check("既にあった登録を残している", Boolean(cfg.mcpServers.other), Object.keys(cfg.mcpServers).join(","));
+    check("他の設定を残している", cfg.keepMe === true);
+    check("控えを作っている", fs.existsSync(`${cfgFile}.bak`));
+
+    const spec = cfg.mcpServers.oneesan;
+    check("自分の登録が入っている", Boolean(spec), Object.keys(cfg.mcpServers).join(","));
+
+    if (spec) {
+      // 書かれていた通りに、無関係なフォルダから起動する
+      const r = spawnSync(spec.command, spec.args, {
+        cwd: FOREIGN_CWD,
+        encoding: "utf8",
+        env: { ...process.env, ...spec.env },
+        input:
+          JSON.stringify({
+            jsonrpc: "2.0",
+            id: 1,
+            method: "initialize",
+            params: {
+              protocolVersion: "2024-11-05",
+              capabilities: {},
+              clientInfo: { name: "t", version: "0" },
+            },
+          }) + "\n",
+        timeout: 60_000,
+      });
+      check(
+        "登録された指定で起動して応答する",
+        String(r.stdout ?? "").includes('"serverInfo"'),
+        String(r.stderr ?? r.stdout ?? "").slice(0, 300),
+      );
+    }
+
+    fs.rmSync(home, { recursive: true, force: true });
   }
 
   console.log(failures === 0 ? "\n全て成功しました。\n" : `\n${failures} 件失敗しました。\n`);

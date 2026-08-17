@@ -12,6 +12,7 @@
 import { spawnSync } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
+import { sh } from "./proc.mjs";
 
 const bin = process.env.CLAUDE_BIN ?? "claude";
 
@@ -27,8 +28,14 @@ function readEnvLocal() {
   return out;
 }
 
-const run = (cmd, args, opts = {}) =>
-  spawnSync(cmd, args, { shell: true, encoding: "utf8", ...opts });
+/**
+ * claude / npm はシェル経由でないと呼べないことがある（Windows の .cmd 中継）。
+ * ただし引数配列と shell: true を混ぜると Node が警告を出すので、
+ * コマンド行を組んでシェルに渡す形にする。ここに来る文字列は
+ * すべてこのファイル内の固定値で、利用者の入力は混ざらない。
+ */
+const run = (cmd, args = [], opts = {}) =>
+  sh([cmd, ...args].join(" "), opts);
 
 const say = (s = "") => console.log(s ? `  ${s}` : "");
 
