@@ -17,7 +17,12 @@ export default async function Page() {
     <div className="space-y-3">
       <header className="flex items-center justify-between">
         <h1 className="text-sm font-bold text-accent">履歴</h1>
-        <span className="num text-[10.5px] text-dim">{items.length}件</span>
+        <div className="flex items-center gap-3">
+          <Link href="/export" className="text-[11px] text-dim underline hover:text-accent">
+            Claude に読ませる
+          </Link>
+          <span className="num text-[10.5px] text-dim">{items.length}件</span>
+        </div>
       </header>
 
       <div className="card-flat">

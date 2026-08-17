@@ -66,6 +66,13 @@ export default async function Page({ params }: { params: Promise<{ id: string }>
         <OutcomeForm analysisId={analysis.root_analysis_id} existing={outcome} />
       </div>
 
+      <Link
+        href={`/export?scope=analysis&ids=${analysis.id}`}
+        className="btn-ghost"
+      >
+        この判定を Claude に読ませる
+      </Link>
+
       <details className="card">
         <summary className="cursor-pointer text-[11.5px] text-dim">
           このとき投入したプロフィール本文を見る

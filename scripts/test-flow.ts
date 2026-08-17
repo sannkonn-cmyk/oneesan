@@ -410,8 +410,57 @@ async function main(): Promise<void> {
     );
   }
 
+  console.log("\n[11] Claude に読ませる書き出し");
+  {
+    const page = await getPage("/export");
+    check("/export が開く", page.status === 200, `HTTP ${page.status}`);
+
+    const ctx = await request("GET", "/export/md?scope=context");
+    check("Markdown が返る", ctx.status === 200 && ctx.text.includes("# 私の判断基準"), ctx.text.slice(0, 120));
+    check("読み手への注意が入っている", ctx.text.includes("この利用者ひとりの実績"));
+
+    if (analysisId) {
+      const one = await request("GET", `/export/md?scope=analysis&ids=${analysisId}`);
+      check("1人分に判定が入る", one.text.includes("## 総合判定"), one.text.slice(0, 120));
+      check("1人分に源氏名が入る", one.text.includes("ゆい"), "嬢の名前が出ていない");
+
+      const anon = await request("GET", `/export/md?scope=analysis&ids=${analysisId}&anon=1`);
+      check("伏せると源氏名が消える", !anon.text.includes("ゆい"), "伏せたのに名前が残っている");
+      check("伏せても判定は残る", anon.text.includes("## 総合判定"));
+
+      const cmp = await request("GET", `/export/md?scope=compare&ids=${analysisId}`);
+      check("壁打ち用に基準が前置きされる", cmp.text.indexOf("# 私の判断基準") < cmp.text.indexOf("# 今回の候補"));
+    }
+
+    // 保存経路（スマホで Claude に添付するとき）
+    const dl = await new Promise<{ status: number; disposition: string; type: string }>((resolve, reject) => {
+      const url = new URL(`${BASE}/export/md?scope=lexicon&download=1`);
+      const req = http.request(
+        {
+          hostname: url.hostname,
+          port: url.port || 80,
+          path: url.pathname + url.search,
+          method: "GET",
+          headers: cookie ? { cookie } : {},
+        },
+        (res) => {
+          res.resume();
+          resolve({
+            status: res.statusCode ?? 0,
+            disposition: String(res.headers["content-disposition"] ?? ""),
+            type: String(res.headers["content-type"] ?? ""),
+          });
+        },
+      );
+      req.on("error", reject);
+      req.end();
+    });
+    check("ファイルとして保存できる", dl.disposition.includes("attachment"), dl.disposition || "指定なし");
+    check("拡張子が md になっている", /\.md"/.test(dl.disposition), dl.disposition);
+  }
+
   // テストが利用者の設定を書き換えたままにしない。
-  console.log("\n[11] 申し送りの削除と、設定の復旧");
+  console.log("\n[12] 申し送りの削除と、設定の復旧");
   {
     for (const id of addedInstructionIds) {
       const page = (await getPage("/settings")).text;

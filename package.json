@@ -13,6 +13,8 @@
     "net:check": "node scripts/net-check.mjs",
     "test:lexicon": "tsx scripts/test-lexicon.ts",
     "test:prompt": "tsx scripts/test-prompt.ts",
+    "test:markdown": "tsx scripts/test-markdown.ts",
+    "test:mcp": "tsx scripts/test-mcp.ts",
     "test:llm": "tsx scripts/test-llm.ts",
     "test:e2e": "tsx scripts/test-e2e.ts",
     "recompute": "tsx scripts/recompute-stats.ts",
@@ -20,6 +22,7 @@
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.70.0",
+    "@modelcontextprotocol/sdk": "^1.30.0",
     "better-sqlite3": "^12.11.1",
     "next": "^15.5.0",
     "react": "^19.1.0",

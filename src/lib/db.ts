@@ -42,6 +42,25 @@ export function getDb(): Database.Database {
   if (g.__oneesanDb) return g.__oneesanDb;
 
   const dbPath = process.env.DATABASE_PATH ?? "./data/oneesan.db";
+
+  /**
+   * 読み取り専用で開く経路。MCP サーバー（Claude Desktop から読ませる口）が使う。
+   * 「書く道具を用意していない」だけでは不十分で、SQLite の側で書けないように
+   * しておく。学習データは手で入力した資産なので、外から壊せる余地を残さない。
+   */
+  if (process.env.ONEESAN_READONLY === "1") {
+    if (!fs.existsSync(dbPath)) {
+      throw new Error(
+        `データベースが見つかりません: ${path.resolve(dbPath)}\n` +
+          "一度アプリを起動してから、もう一度お試しください。",
+      );
+    }
+    // journal_mode の変更は書き込みになるので触らない。移行も走らせない。
+    const ro = new Database(dbPath, { readonly: true });
+    g.__oneesanDb = ro;
+    return ro;
+  }
+
   fs.mkdirSync(path.dirname(path.resolve(dbPath)), { recursive: true });
 
   const db = new Database(dbPath);
