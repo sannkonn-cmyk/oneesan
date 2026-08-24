@@ -7,6 +7,8 @@ import {
   listHistory,
   listLexiconWithStats,
   listVerifications,
+  listVisits,
+  type OutcomeRow,
 } from "./queries";
 import type { AnalyzeResult, RereviewResult } from "./schemas";
 import { getAnalysis } from "./service";
@@ -201,6 +203,40 @@ ${sampleNote(patterns.samples, "実績を入力した登楼")}`);
   return out.join("\n\n");
 }
 
+
+const VISIT_SCORES: { key: keyof OutcomeRow; label: string }[] = [
+  { key: "satisfaction", label: "総合満足度" },
+  { key: "girl_rating", label: "女の子" },
+  { key: "service_rating", label: "プレイ" },
+  { key: "price_rating", label: "料金" },
+  { key: "photo_match", label: "写真" },
+  { key: "attitude_rating", label: "接客態度" },
+];
+
+/**
+ * 登楼記録。**プレイ内容と総評を必ず載せる。**
+ * 口コミサイトに書けない部分こそ、次の判断材料として価値が高い。
+ * ここを削ると、書き出したものが当たり障りの無い要約になってしまう。
+ */
+function renderVisit(o: OutcomeRow, namer: Namer): string {
+  const rows = VISIT_SCORES.filter((s) => typeof o[s.key] === "number" && (o[s.key] as number) > 0)
+    .map((s) => `| ${s.label} | ${(o[s.key] as number).toFixed(1)} |`)
+    .join("\n");
+
+  const parts = ["## 実際に行った結果"];
+  if (o.visited_at) parts.push(`登楼日: ${o.visited_at}`);
+  if (o.review_title) parts.push(`### ${namer.scrub(o.review_title)}`);
+  parts.push(
+    rows
+      ? `| 観点 | 5点満点（0.1刻み） |\n|---|---|\n${rows}`
+      : "（点数は未入力）",
+  );
+  if (o.about_her) parts.push(`**お相手の女性について**\n\n${namer.scrub(o.about_her)}`);
+  if (o.play_detail) parts.push(`**プレイ内容**\n\n${namer.scrub(o.play_detail)}`);
+  if (o.note) parts.push(`**今回の総評**\n\n${namer.scrub(o.note)}`);
+  return parts.join("\n\n");
+}
+
 // ---------------------------------------------------------------- 1人分
 
 function readingBlock(
@@ -303,18 +339,9 @@ ${namer.scrub(result.summary)}
   }
 
   if (outcome) {
-    out.push(`## 実際に行った結果
-
-| 観点 | 5段階 |
-|---|---|
-| 総合満足度 | ${outcome.satisfaction ?? "-"} |
-| サービス | ${outcome.service_rating ?? "-"} |
-| 写真との一致 | ${outcome.photo_match ?? "-"} |
-| 接客態度 | ${outcome.attitude_rating ?? "-"} |
-
-所感: ${outcome.note ? namer.scrub(outcome.note) : "なし"}`);
+    out.push(renderVisit(outcome, namer));
   } else {
-    out.push("## 実際に行った結果\n\nまだ行っていません（または実績を未入力）。");
+    out.push("## 実際に行った結果\n\nまだ行っていません（または記録が未入力）。");
   }
 
   return out.join("\n\n");
@@ -421,6 +448,30 @@ export function buildOverviewMarkdown(opts: MarkdownOptions = {}): string {
     }
   } else {
     out.push("（まだ判定がありません）");
+  }
+
+  // 判定を通していない相手の記録。ここに出さないと書き出しから抜け落ちる。
+  const solo = listVisits(limit).filter((v) => !v.analysis_id);
+  if (solo.length) {
+    out.push(`# 判定を通していない登楼記録
+
+事前に判定していない相手の記録です。読みが無いので的中率には反映されていませんが、
+実際に行った事実としては同じ重みがあります。`);
+    out.push(
+      solo
+        .map((v) => {
+          const head =
+            `- ${(v.visited_at || v.created_at).slice(0, 10)} ` +
+            `${namer.girl(v.girl_name)}（${namer.shop(v.shop_name)}）` +
+            (v.satisfaction ? ` 総合 ${v.satisfaction.toFixed(1)}` : "");
+          const body = [v.review_title, v.note]
+            .filter(Boolean)
+            .map((t) => `    ${namer.scrub(t as string)}`)
+            .join("\n");
+          return body ? `${head}\n${body}` : head;
+        })
+        .join("\n"),
+    );
   }
 
   out.push(`# 相談したいこと

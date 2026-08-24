@@ -62,8 +62,11 @@ export default async function Page({ params }: { params: Promise<{ id: string }>
         </p>
       )}
 
-      <div className="pt-2">
+      <div className="space-y-2 pt-2">
         <OutcomeForm analysisId={analysis.root_analysis_id} existing={outcome} />
+        <Link href="/log" className="hint block text-center underline">
+          これまでの登楼記録を見る
+        </Link>
       </div>
 
       <Link

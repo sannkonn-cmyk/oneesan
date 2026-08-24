@@ -197,7 +197,7 @@ async function main(): Promise<void> {
   }
 
   console.log("\n[2] 画面が開く");
-  for (const p of ["/", "/history", "/import", "/lexicon", "/settings", "/health"]) {
+  for (const p of ["/", "/history", "/log", "/import", "/lexicon", "/settings", "/health"]) {
     const res = await getPage(p);
     check(`${p} が表示される`, res.status === 200, `HTTP ${res.status}`);
   }
@@ -344,27 +344,69 @@ async function main(): Promise<void> {
     }
   }
 
-  console.log("\n[8] 登楼実績の記録と学習");
+  console.log("\n[8] 登楼記録と学習");
   if (analysisId) {
     const r = await api("/api/outcome", {
       analysis_id: analysisId,
-      satisfaction: 5,
-      service_rating: 5,
-      photo_match: 2,
-      attitude_rating: 4,
+      visited_at: "2026-08-18",
+      // 0.1 刻み。整数に丸められないことを後で確かめる。
+      satisfaction: 4.7,
+      girl_rating: 4.3,
+      service_rating: 4.9,
+      price_rating: 3.8,
+      photo_match: 2.2,
+      review_title: "受入テストの口コミ",
+      about_her: "受入テスト・お相手について",
+      play_detail: `受入テスト・プレイ内容 ${MARK}`,
       note: "受入テスト",
     });
     check(
-      "実績が保存できる",
+      "記録が保存できる",
       r.status === 200 && r.json.ok === true,
       r.json.error ?? JSON.stringify(r.json).slice(0, 300),
     );
     if (r.json.ok) {
       console.log(`       → 学習データ ${r.json.data.evidenceCount} 件を記録`);
     }
+
+    const detail = (await getPage(`/analysis/${analysisId}`)).text;
+    check("0.1 刻みが丸められない", detail.includes("4.7"), "総合 4.7 が見当たらない");
+    check("口コミタイトルが残る", detail.includes("受入テストの口コミ"));
+    check("プレイ内容が残る", detail.includes(MARK), "プレイ内容が保存されていない");
   }
 
-  console.log("\n[9] 学習が辞書に反映されているか");
+  console.log("\n[9] 登楼記録の一覧と、判定を通していない記録");
+  let soloId = 0;
+  {
+    const list = (await getPage("/log")).text;
+    check("/log が開く", list.includes("登楼記録"));
+    check("判定に紐づく記録が並ぶ", list.includes("受入テストの口コミ"));
+
+    const r = await api("/api/outcome", {
+      shop_name: "受入テスト店（単独）",
+      girl_name: `もな${MARK}`,
+      visited_at: "2026-08-18",
+      satisfaction: 4.7,
+      review_title: "判定なしの記録",
+      play_detail: "単独記録のプレイ内容",
+    });
+    check(
+      "判定なしでも記録できる",
+      r.status === 200 && r.json.ok === true,
+      r.json.error ?? JSON.stringify(r.json).slice(0, 200),
+    );
+    soloId = r.json?.data?.id ?? 0;
+
+    const after = (await getPage("/log")).text;
+    check("単独記録が一覧に出る", after.includes("判定なしの記録"));
+    check("単独記録の点数も 0.1 刻み", after.includes("4.7"));
+
+    // 名前も店名も無い記録は、後から誰の話か分からなくなる
+    const bad = await api("/api/outcome", { satisfaction: 5 });
+    check("名前も店名も無いと断られる", bad.json.ok === false, JSON.stringify(bad.json).slice(0, 150));
+  }
+
+  console.log("\n[10] 学習が辞書に反映されているか");
   {
     const html = (await getPage("/lexicon")).text;
     const verified = html.match(/実績\s*[\d.]+件/g) ?? [];
@@ -375,7 +417,7 @@ async function main(): Promise<void> {
     );
   }
 
-  console.log("\n[10] 過去登録の削除と、学習の巻き戻し");
+  console.log("\n[11] 過去登録の削除と、学習の巻き戻し");
   if (pastCaseId) {
     const before = (await getPage("/lexicon")).text;
     const beforeCount = (before.match(/実績\s*[\d.]+件/g) ?? []).length;
@@ -410,7 +452,7 @@ async function main(): Promise<void> {
     );
   }
 
-  console.log("\n[11] Claude に読ませる書き出し");
+  console.log("\n[12] Claude に読ませる書き出し");
   {
     const page = await getPage("/export");
     check("/export が開く", page.status === 200, `HTTP ${page.status}`);
@@ -427,6 +469,10 @@ async function main(): Promise<void> {
       const anon = await request("GET", `/export/md?scope=analysis&ids=${analysisId}&anon=1`);
       check("伏せると源氏名が消える", !anon.text.includes("ゆい"), "伏せたのに名前が残っている");
       check("伏せても判定は残る", anon.text.includes("## 総合判定"));
+
+      check("書き出しにプレイ内容が載る", one.text.includes(MARK), "プレイ内容が書き出されていない");
+      check("書き出しに口コミタイトルが載る", one.text.includes("受入テストの口コミ"));
+      check("点数が 0.1 刻みで書き出される", one.text.includes("4.7"), "総合 4.7 が見当たらない");
 
       const cmp = await request("GET", `/export/md?scope=compare&ids=${analysisId}`);
       check("壁打ち用に基準が前置きされる", cmp.text.indexOf("# 私の判断基準") < cmp.text.indexOf("# 今回の候補"));
@@ -460,7 +506,7 @@ async function main(): Promise<void> {
   }
 
   // テストが利用者の設定を書き換えたままにしない。
-  console.log("\n[12] 申し送りの削除と、設定の復旧");
+  console.log("\n[13] 申し送りの削除と、設定の復旧");
   {
     for (const id of addedInstructionIds) {
       const page = (await getPage("/settings")).text;
@@ -480,6 +526,20 @@ async function main(): Promise<void> {
       [actionIdFor(page, "channel"), ""],
     ]);
     check("確認手段が元に戻っている", await phoneChecked(), "電話が無効のままになっている");
+
+    // 単独記録は残しておくと次回の検査で邪魔になる
+    if (soloId) {
+      const del = await request("DELETE", "/api/outcome", { id: soloId });
+      let ok = false;
+      try {
+        ok = JSON.parse(del.text).ok === true;
+      } catch {
+        ok = false;
+      }
+      check("単独記録を削除できる", ok, del.text.slice(0, 150));
+      const list = (await getPage("/log")).text;
+      check("単独記録が一覧から消える", !list.includes("判定なしの記録"));
+    }
   }
 
   console.log(failures === 0 ? "\n全て成功しました。\n" : `\n${failures} 件失敗しました。\n`);

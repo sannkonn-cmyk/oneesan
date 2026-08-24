@@ -17,6 +17,7 @@ export const viewport: Viewport = {
 const NAV = [
   { href: "/", label: "判定" },
   { href: "/history", label: "履歴" },
+  { href: "/log", label: "記録" },
   { href: "/import", label: "過去登録" },
   { href: "/lexicon", label: "辞書" },
   { href: "/settings", label: "設定" },
@@ -27,16 +28,21 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
     <html lang="ja">
       <body>
         <div className="mx-auto max-w-3xl px-4 pb-24 pt-4">
-          <header className="mb-5 flex items-center justify-between">
-            <Link href="/" className="text-sm font-bold tracking-wide text-accent">
+          {/*
+            題名と並びは段を分ける。同じ行に載せると、狭い画面（360px）で
+            項目が1文字ずつ縦に折り返して読めなくなる。
+          */}
+          <header className="mb-5 space-y-2">
+            <Link href="/" className="block text-sm font-bold tracking-wide text-accent">
               お姉さん投資判定
             </Link>
-            <nav className="flex gap-1 text-xs">
+            <nav className="-mx-1 flex gap-0.5 overflow-x-auto text-xs">
               {NAV.map((n) => (
                 <Link
                   key={n.href}
                   href={n.href}
-                  className="rounded-md px-2 py-1 text-muted hover:bg-edge/60 hover:text-slate-100"
+                  className="shrink-0 whitespace-nowrap rounded-md px-2.5 py-1 text-muted
+                             hover:bg-edge/60 hover:text-slate-100"
                 >
                   {n.label}
                 </Link>

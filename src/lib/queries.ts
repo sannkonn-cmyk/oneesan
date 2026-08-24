@@ -92,21 +92,65 @@ export function listChain(rootId: number): ChainItem[] {
 }
 
 export interface OutcomeRow {
+  id: number;
   visited_at: string | null;
   satisfaction: number | null;
+  girl_rating: number | null;
   service_rating: number | null;
+  price_rating: number | null;
   photo_match: number | null;
   attitude_rating: number | null;
+  review_title: string | null;
+  about_her: string | null;
+  play_detail: string | null;
   note: string | null;
 }
+
+const OUTCOME_COLUMNS = `id, visited_at, satisfaction, girl_rating, service_rating,
+  price_rating, photo_match, attitude_rating, review_title, about_her, play_detail, note`;
 
 export function getOutcome(rootId: number): OutcomeRow | undefined {
   return getDb()
     .prepare<[number], OutcomeRow>(
-      `SELECT visited_at, satisfaction, service_rating, photo_match, attitude_rating, note
-       FROM outcome WHERE analysis_id = ?`,
+      `SELECT ${OUTCOME_COLUMNS} FROM outcome WHERE analysis_id = ?`,
     )
     .get(rootId);
+}
+
+export interface VisitRow extends OutcomeRow {
+  created_at: string;
+  analysis_id: number | null;
+  shop_name: string;
+  girl_name: string;
+}
+
+/**
+ * 登楼記録の一覧。
+ *
+ * 判定に紐づく記録と、判定を通していない単独の記録の両方を返す。
+ * 名前は、判定に紐づくならそちらを優先する（判定側で直したら記録も直る）。
+ * 記憶で入れた過去登録（past_case）は、性質が違うので混ぜない。
+ */
+export function listVisits(limit = 200): VisitRow[] {
+  return getDb()
+    .prepare<[number], VisitRow>(
+      `SELECT o.id, o.created_at, o.analysis_id, o.visited_at,
+              COALESCE(NULLIF(a.shop_name, ''), o.shop_name, '') AS shop_name,
+              COALESCE(NULLIF(a.girl_name, ''), o.girl_name, '') AS girl_name,
+              o.satisfaction, o.girl_rating, o.service_rating, o.price_rating,
+              o.photo_match, o.attitude_rating,
+              o.review_title, o.about_her, o.play_detail, o.note
+         FROM outcome o
+         LEFT JOIN analysis a ON a.id = o.analysis_id
+        WHERE o.past_case_id IS NULL
+        ORDER BY COALESCE(o.visited_at, o.created_at) DESC, o.id DESC
+        LIMIT ?`,
+    )
+    .all(limit);
+}
+
+export function getVisit(id: number): VisitRow | undefined {
+  return listVisits(500).find((v) => v.id === id);
 }
 
 export interface LexiconView {

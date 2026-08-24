@@ -354,13 +354,107 @@ export function deletePastCase(id: number): { removedEvidence: number } {
 // ---------------------------------------------------------------- 4. 登楼実績の記録
 
 export interface OutcomeArgs {
+  /** 判定に紐づく記録なら判定の id。単独の記録なら 0。 */
   analysisId: number;
+  /** 単独記録のときだけ使う。判定に紐づく場合は判定側の名前を使う。 */
+  shopName?: string;
+  girlName?: string;
   visitedAt?: string;
+
+  // 1.0〜5.0（0.1 刻み）。0 は未入力で、悪い評価とは区別する。
   satisfaction: number;
+  girlRating: number;
   serviceRating: number;
+  priceRating: number;
   photoMatch: number;
   attitudeRating: number;
+
+  reviewTitle?: string;
+  aboutHer?: string;
+  playDetail?: string;
   note?: string;
+}
+
+/** 記録1件を書き込む。判定に紐づく場合も単独の場合も、入る列は同じ。 */
+function insertOutcome(
+  db: ReturnType<typeof getDb>,
+  args: OutcomeArgs,
+  analysisRootId: number | null,
+): number {
+  const info = db
+    .prepare(
+      `INSERT INTO outcome
+         (created_at, analysis_id, shop_name, girl_name, visited_at,
+          satisfaction, girl_rating, service_rating, price_rating, photo_match, attitude_rating,
+          review_title, about_her, play_detail, note)
+       VALUES (?,?,?,?,?, ?,?,?,?,?,?, ?,?,?,?)`,
+    )
+    .run(
+      nowIso(),
+      analysisRootId,
+      args.shopName || null,
+      args.girlName || null,
+      args.visitedAt || null,
+      args.satisfaction || null,
+      args.girlRating || null,
+      args.serviceRating || null,
+      args.priceRating || null,
+      args.photoMatch || null,
+      args.attitudeRating || null,
+      args.reviewTitle || null,
+      args.aboutHer || null,
+      args.playDetail || null,
+      args.note || null,
+    );
+  return Number(info.lastInsertRowid);
+}
+
+/**
+ * 判定を通していない子の記録。
+ *
+ * 事前に判定していない相手にも行く。そのとき記録が残せないと、
+ * **溜まっていく記録に穴が空く**。ここで受ける。
+ * 読みが無いので当たり外れを判定できず、辞書の的中率には反映されない。
+ */
+export function saveSoloVisit(args: OutcomeArgs): { id: number } {
+  if (!args.girlName?.trim() && !args.shopName?.trim()) {
+    throw new Error("店名か源氏名のどちらかを入れてください");
+  }
+  return { id: insertOutcome(getDb(), { ...args, analysisId: 0 }, null) };
+}
+
+/** 単独記録の更新。判定に紐づく記録は saveOutcome 側で入れ替える。 */
+export function updateSoloVisit(id: number, args: OutcomeArgs): void {
+  getDb()
+    .prepare(
+      `UPDATE outcome SET
+         shop_name = ?, girl_name = ?, visited_at = ?,
+         satisfaction = ?, girl_rating = ?, service_rating = ?, price_rating = ?,
+         photo_match = ?, review_title = ?, about_her = ?, play_detail = ?, note = ?
+       WHERE id = ? AND analysis_id IS NULL AND past_case_id IS NULL`,
+    )
+    .run(
+      args.shopName || null,
+      args.girlName || null,
+      args.visitedAt || null,
+      args.satisfaction || null,
+      args.girlRating || null,
+      args.serviceRating || null,
+      args.priceRating || null,
+      args.photoMatch || null,
+      args.reviewTitle || null,
+      args.aboutHer || null,
+      args.playDetail || null,
+      args.note || null,
+      id,
+    );
+}
+
+export function deleteVisit(id: number): void {
+  // 判定に紐づく記録をここから消させない。判定側から消す経路が別にある。
+  getDb()
+    .prepare("DELETE FROM outcome WHERE id = ? AND analysis_id IS NULL AND past_case_id IS NULL")
+    .run(id);
 }
 
 /** 5段階評価を good / bad / neutral に落とす。3 は情報なしとして扱う。 */
@@ -439,21 +533,7 @@ export function saveOutcome(args: OutcomeArgs): { evidenceCount: number } {
 
   db.transaction(() => {
     db.prepare("DELETE FROM outcome WHERE analysis_id = ?").run(analysis.root_analysis_id);
-    db.prepare(
-      `INSERT INTO outcome
-         (created_at, analysis_id, visited_at, satisfaction, service_rating,
-          photo_match, attitude_rating, note)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
-    ).run(
-      nowIso(),
-      analysis.root_analysis_id,
-      args.visitedAt || null,
-      args.satisfaction || null,
-      args.serviceRating || null,
-      args.photoMatch || null,
-      args.attitudeRating || null,
-      args.note || null,
-    );
+    insertOutcome(db, args, analysis.root_analysis_id);
   })();
 
   // 学習は「その系列で最後に出た判定」の読みに対して行う。
